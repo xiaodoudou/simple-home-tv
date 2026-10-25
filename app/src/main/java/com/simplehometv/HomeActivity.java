@@ -38,7 +38,7 @@ import java.util.Locale;
  */
 public class HomeActivity extends Activity {
 
-    private enum Mode { HOME, DRAWER }
+    private enum Mode { HOME, DRAWER, MENU }
 
     private float dp;
     private SharedPreferences prefs;
@@ -59,9 +59,16 @@ public class HomeActivity extends Activity {
     private final List<View> drawerViews = new ArrayList<>();
 
     private Mode mode = Mode.HOME;
+    private Mode menuReturn = Mode.HOME;    // where to go back to when the hold-menu closes
     private int focus = 0;
     private int drawerCols = 6;
     private int drawerBarCount;             // pinned tiles at the front of the drawer (the bar)
+    private boolean heldFired;              // the current OK press already triggered a hold (so its release is swallowed)
+
+    private LinearLayout menuBox;
+    private final List<View> menuViews = new ArrayList<>();
+    private final List<Runnable> menuActions = new ArrayList<>();
+    private int menuFocus;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable tick = this::updateClock;
@@ -82,8 +89,16 @@ public class HomeActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         load();
-        if (mode == Mode.HOME) renderHome();
-        else renderDrawer();
+        mode = Mode.HOME;
+        menuBox.setVisibility(View.GONE);
+        drawerScroll.setVisibility(View.GONE);
+        drawerScroll.setAlpha(1f);
+        dockScroll.setVisibility(View.VISIBLE);
+        dockScroll.setAlpha(1f);
+        clock.setAlpha(1f);
+        date.setAlpha(1f);
+        renderHome();
+        focusDock(0);
         updateClock();
     }
 
@@ -158,7 +173,7 @@ public class HomeActivity extends Activity {
         root.addView(date, dl);
 
         ImageView gear = new ImageView(this);
-        gear.setImageResource(android.R.drawable.ic_menu_manage);
+        gear.setImageResource(R.drawable.ic_settings);
         gear.setColorFilter(0xFFFFFFFF);
         gear.setBackground(circle(0x26FFFFFF));
         gear.setPadding(px(8), px(8), px(8), px(8));
@@ -184,12 +199,22 @@ public class HomeActivity extends Activity {
 
         drawerScroll = new ScrollView(this);
         drawerScroll.setVisibility(View.GONE);
-        drawerScroll.setBackgroundColor(0xF2090A0E);
+        drawerScroll.setBackgroundColor(0xFF0A0B0F);
         drawerBox = new LinearLayout(this);
         drawerBox.setOrientation(LinearLayout.VERTICAL);
         drawerBox.setPadding(px(48), px(44), px(48), px(56));
         drawerScroll.addView(drawerBox, new FrameLayout.LayoutParams(-1, -2));
         root.addView(drawerScroll, new FrameLayout.LayoutParams(-1, -1));
+
+        menuBox = new LinearLayout(this);
+        menuBox.setOrientation(LinearLayout.VERTICAL);
+        menuBox.setVisibility(View.GONE);
+        menuBox.setBackground(rounded(0xFF202227, px(16)));
+        menuBox.setPadding(px(8), px(8), px(8), px(8));
+        menuBox.setElevation(px(18));
+        FrameLayout.LayoutParams ml = new FrameLayout.LayoutParams(px(260), -2);
+        ml.gravity = Gravity.CENTER;
+        root.addView(menuBox, ml);
 
         setContentView(root);
     }
@@ -197,9 +222,6 @@ public class HomeActivity extends Activity {
     // ---- home dock ----
 
     private void renderHome() {
-        mode = Mode.HOME;
-        drawerScroll.setVisibility(View.GONE);
-        dockScroll.setVisibility(View.VISIBLE);
         dock.removeAllViews();
         dockViews.clear();
         dockTiles.clear();
@@ -227,11 +249,32 @@ public class HomeActivity extends Activity {
 
     private void openDrawer() {
         mode = Mode.DRAWER;
-        dockScroll.setVisibility(View.GONE);
-        drawerScroll.setVisibility(View.VISIBLE);
-        drawerScroll.scrollTo(0, 0);
         renderDrawer();
+        drawerScroll.scrollTo(0, 0);
+        drawerScroll.setAlpha(0f);
+        drawerScroll.setTranslationY(px(28));
+        drawerScroll.setVisibility(View.VISIBLE);
+        drawerScroll.animate().alpha(1f).translationY(0).setDuration(200).start();
+        dockScroll.animate().alpha(0f).setDuration(110).withEndAction(() -> dockScroll.setVisibility(View.GONE)).start();
+        clock.animate().alpha(0f).setDuration(110).start();
+        date.animate().alpha(0f).setDuration(110).start();
         drawerScroll.post(() -> focusDrawer(0));
+    }
+
+    private void closeDrawer() {
+        mode = Mode.HOME;
+        renderHome();
+        drawerScroll.animate().alpha(0f).translationY(px(20)).setDuration(150)
+                .withEndAction(() -> {
+                    drawerScroll.setVisibility(View.GONE);
+                    drawerScroll.setTranslationY(0);
+                }).start();
+        dockScroll.setAlpha(0f);
+        dockScroll.setVisibility(View.VISIBLE);
+        dockScroll.animate().alpha(1f).setDuration(200).start();
+        clock.animate().alpha(1f).setDuration(200).start();
+        date.animate().alpha(1f).setDuration(200).start();
+        focusDock(0);
     }
 
     private void renderDrawer() {
@@ -245,8 +288,8 @@ public class HomeActivity extends Activity {
         drawerBox.addView(sectionLabel("PINNED", false));
         LinearLayout bar = row();
         for (int i = 0; i < pinned.size(); i++) {
-            View v = tileView(pinned.get(i), 124, 70);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(px(124), px(70));
+            View v = tileView(pinned.get(i), 112, 63);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(px(112), px(63));
             if (i > 0) lp.leftMargin = px(14);
             bar.addView(v, lp);
             drawerViews.add(v);
@@ -264,8 +307,8 @@ public class HomeActivity extends Activity {
                 gridRow.setLayoutParams(rl);
                 drawerBox.addView(gridRow);
             }
-            View v = tileView(rest.get(i), 124, 70);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(px(124), px(70));
+            View v = tileView(rest.get(i), 112, 63);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(px(112), px(63));
             if (i % drawerCols > 0) lp.leftMargin = px(14);
             gridRow.addView(v, lp);
             drawerViews.add(v);
@@ -296,21 +339,27 @@ public class HomeActivity extends Activity {
         boolean ok = k == KeyEvent.KEYCODE_DPAD_CENTER || k == KeyEvent.KEYCODE_ENTER || k == KeyEvent.KEYCODE_BUTTON_A;
         boolean back = k == KeyEvent.KEYCODE_BACK;
 
-        if (ok && e.getAction() == KeyEvent.ACTION_DOWN && e.getRepeatCount() == 1) {
-            onHold();
+        if (ok && down) {
+            if (e.getRepeatCount() == 0) heldFired = false;
+            else if (e.getRepeatCount() == 1 && !heldFired && mode != Mode.MENU) {
+                heldFired = true;
+                onHold();
+            }
             return true;
         }
-        if (!down) {
-            if (up && ok) {
-                onSelect();
+        if (up && ok) {
+            if (heldFired) {
+                heldFired = false;
                 return true;
             }
-            if (up && back) {
-                onBack();
-                return true;
-            }
-            return super.dispatchKeyEvent(e);
+            onSelect();
+            return true;
         }
+        if (up && back) {
+            onBack();
+            return true;
+        }
+        if (!down) return super.dispatchKeyEvent(e);
         switch (k) {
             case KeyEvent.KEYCODE_DPAD_LEFT: nav(-1, 0); return true;
             case KeyEvent.KEYCODE_DPAD_RIGHT: nav(1, 0); return true;
@@ -321,6 +370,11 @@ public class HomeActivity extends Activity {
     }
 
     private void nav(int dx, int dy) {
+        if (mode == Mode.MENU) {
+            if (dy < 0) focusMenu(menuFocus - 1);
+            else if (dy > 0) focusMenu(menuFocus + 1);
+            return;
+        }
         if (mode == Mode.HOME) {
             if (dx != 0) focusDock(focus + dx);
             return;
@@ -346,25 +400,99 @@ public class HomeActivity extends Activity {
     }
 
     private void onSelect() {
+        if (mode == Mode.MENU) {
+            Runnable a = menuFocus < menuActions.size() ? menuActions.get(menuFocus) : null;
+            closeMenu();
+            if (a != null) a.run();
+            return;
+        }
         Tile t = mode == Mode.HOME ? dockTiles.get(focus) : drawerTiles.get(focus);
         if (t.kind == Tile.Kind.ALL_APPS) {
             openDrawer();
             return;
         }
-        if (t.launch != null) {
-            try {
-                startActivity(t.launch);
-            } catch (Exception ignored) {
-            }
-        }
+        if (t.launch != null) startSafe(t.launch);
     }
 
     private void onHold() {
         Tile t = mode == Mode.HOME ? dockTiles.get(focus) : drawerTiles.get(focus);
         if (t.kind == Tile.Kind.ALL_APPS) return;
+        openTileMenu(t);
+    }
+
+    private void onBack() {
+        if (mode == Mode.MENU) {
+            closeMenu();
+        } else if (mode == Mode.DRAWER) {
+            closeDrawer();
+        }
+    }
+
+    // ---- hold menu ----
+
+    private void openTileMenu(Tile t) {
+        List<String> labels = new ArrayList<>();
+        List<Runnable> actions = new ArrayList<>();
+        boolean pinned = pins.isPinned(t.id);
+        labels.add(pinned ? "Unpin from dock" : "Pin to dock");
+        actions.add(() -> togglePinFromMenu(t));
+        if (t.kind == Tile.Kind.APP) {
+            if (canUninstall(t.pkg)) {
+                labels.add("Uninstall");
+                actions.add(() -> startSafe(new Intent(Intent.ACTION_DELETE, android.net.Uri.parse("package:" + t.pkg))
+                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+            }
+            labels.add("App info");
+            actions.add(() -> startSafe(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + t.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)));
+        }
+        openMenu(labels, actions);
+    }
+
+    private void openMenu(List<String> labels, List<Runnable> actions) {
+        menuReturn = mode;
+        mode = Mode.MENU;
+        menuViews.clear();
+        menuActions.clear();
+        menuBox.removeAllViews();
+        for (int i = 0; i < labels.size(); i++) {
+            TextView row = new TextView(this);
+            row.setText(labels.get(i));
+            row.setTextColor(0xFFE7EAEC);
+            row.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            row.setPadding(px(18), px(13), px(18), px(13));
+            row.setLayoutParams(new LinearLayout.LayoutParams(-1, -2));
+            menuBox.addView(row);
+            menuViews.add(row);
+            menuActions.add(actions.get(i));
+        }
+        menuBox.setScaleX(0.94f);
+        menuBox.setScaleY(0.94f);
+        menuBox.setAlpha(0f);
+        menuBox.setVisibility(View.VISIBLE);
+        menuBox.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(130).start();
+        focusMenu(0);
+    }
+
+    private void focusMenu(int i) {
+        if (menuViews.isEmpty()) return;
+        menuFocus = Math.max(0, Math.min(i, menuViews.size() - 1));
+        for (int k = 0; k < menuViews.size(); k++) {
+            boolean f = k == menuFocus;
+            menuViews.get(k).setBackground(f ? rounded(0xFFFFFFFF, px(10)) : null);
+            ((TextView) menuViews.get(k)).setTextColor(f ? 0xFF111317 : 0xFFE7EAEC);
+        }
+    }
+
+    private void closeMenu() {
+        menuBox.setVisibility(View.GONE);
+        mode = menuReturn;
+    }
+
+    private void togglePinFromMenu(Tile t) {
         pins.toggle(t.id);
         savePins();
-        if (mode == Mode.HOME) {
+        if (menuReturn == Mode.HOME) {
             renderHome();
             focusDock(Math.min(focus, dockViews.size() - 1));
         } else {
@@ -374,10 +502,20 @@ public class HomeActivity extends Activity {
         }
     }
 
-    private void onBack() {
-        if (mode == Mode.DRAWER) {
-            renderHome();
-            focusDock(0);
+    private boolean canUninstall(String pkg) {
+        try {
+            int f = getPackageManager().getApplicationInfo(pkg, 0).flags;
+            return (f & (android.content.pm.ApplicationInfo.FLAG_SYSTEM
+                    | android.content.pm.ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void startSafe(Intent i) {
+        try {
+            startActivity(i);
+        } catch (Exception ignored) {
         }
     }
 
@@ -519,11 +657,11 @@ public class HomeActivity extends Activity {
     }
 
     private Drawable tvGlyph() {
-        return getDrawable(android.R.drawable.ic_menu_view);
+        return getDrawable(R.drawable.ic_input);
     }
 
     private Drawable appsGlyph() {
-        return getDrawable(android.R.drawable.ic_dialog_dialer);
+        return getDrawable(R.drawable.ic_apps);
     }
 
     private TextView sectionLabel(String text, boolean spacedAbove) {
