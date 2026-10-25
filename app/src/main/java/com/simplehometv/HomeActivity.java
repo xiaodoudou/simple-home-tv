@@ -496,7 +496,7 @@ public class HomeActivity extends Activity {
 
     private void focusGear() {
         zone = Zone.GEAR;
-        for (View v : dockViews) setFocused(v, false, true);
+        markSpotTile();
         for (View v : contentViews) setFocused(v, false, false);
         styleGear(true);
     }
@@ -552,7 +552,6 @@ public class HomeActivity extends Activity {
         io.execute(() -> {
             List<Content.Source> sources = Content.sources(this, t.pkg);
             List<Content.Item> items = Content.items(this, t.pkg, sources, prefs.hiddenSources(t.pkg), 12);
-            if (!items.isEmpty()) ImageCache.load(this, items.get(0).art, 1280);
             Spot s = new Spot(sources, items);
             main.post(() -> {
                 spots.put(t.pkg, s);
@@ -564,13 +563,19 @@ public class HomeActivity extends Activity {
 
     private void applySpot(Tile t, Spot s) {
         if (s.items.isEmpty()) {
+            boolean wasInRow = zone == Zone.CONTENT;
             clearSpot();
+            if (wasInRow) for (int k = 0; k < dockViews.size(); k++) setFocused(dockViews.get(k), k == dockFocus, true);
             return;
         }
         if (!sameItems(s.items)) {
             contentItems.clear();
             contentItems.addAll(s.items);
             renderContent();
+            if (zone == Zone.CONTENT) {
+                focusContent(Math.min(contentFocus, contentViews.size() - 1));
+                return;
+            }
         }
         if (contentScroll.getVisibility() != View.VISIBLE) {
             contentScroll.setVisibility(View.VISIBLE);
@@ -694,7 +699,7 @@ public class HomeActivity extends Activity {
         zone = Zone.CONTENT;
         styleGear(false);
         contentFocus = Math.max(0, Math.min(i, contentViews.size() - 1));
-        for (View v : dockViews) setFocused(v, false, true);
+        markSpotTile();
         for (int k = 0; k < contentViews.size(); k++) setFocused(contentViews.get(k), k == contentFocus, false);
         View col = contentViews.get(contentFocus);
         contentScroll.post(() -> {
@@ -1414,6 +1419,15 @@ public class HomeActivity extends Activity {
         tl.leftMargin = tl.rightMargin = px(8);
         col.addView(tv, tl);
         card.addView(col, full());
+    }
+
+    /** Away from the dock, the tile whose content is showing keeps a faint ring so the row has an owner. */
+    private void markSpotTile() {
+        for (int k = 0; k < dockViews.size(); k++) {
+            View v = dockViews.get(k);
+            setFocused(v, false, true);
+            if (k == dockFocus && !contentViews.isEmpty()) v.setForeground(Ui.stroke(0x66FFFFFF, px(2), px(Ui.RADIUS + RING - 1)));
+        }
     }
 
     private void setFocused(View outer, boolean focused, boolean zoom) {

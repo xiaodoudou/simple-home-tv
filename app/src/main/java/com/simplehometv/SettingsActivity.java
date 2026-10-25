@@ -134,6 +134,8 @@ public class SettingsActivity extends Activity {
         rowScroll = new ScrollView(this);
         rowScroll.setVerticalScrollBarEnabled(false);
         rowScroll.setFocusable(false);
+        rowScroll.setVerticalFadingEdgeEnabled(true);
+        rowScroll.setFadingEdgeLength(px(36));
         rowScroll.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         rowScroll.setClipToPadding(false);
         rowScroll.setPadding(0, 0, 0, px(40));
