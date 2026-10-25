@@ -16,7 +16,7 @@ final class Ui {
 
     static final int TEXT = 0xFFF5F5F7;
     static final int TEXT_DIM = 0x99F5F5F7;
-    static final int TEXT_FAINT = 0x66F5F5F7;
+    static final int TEXT_FAINT = 0x8CF5F5F7;
     static final int CARD = 0xFF1F2228;
     static final int PANEL = 0xFF16181D;
     static final int ACCENT = 0xFF30D158;

@@ -21,8 +21,10 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.KeyEvent;
+import android.graphics.Outline;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.ViewOutlineProvider;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -60,6 +62,7 @@ public class HomeActivity extends Activity {
     private static final int VPAD = 10;         // room above and below a row for a focused tile's zoom
     private static final int HEADER = 48;       // drawer title height above the lifted bar
     private static final float ZOOM = 1.07f;
+    private static final int CAPTION = 0x80F5F5F7;
 
     private float dp;
     private int screenWdp, screenHdp, availW;
@@ -295,8 +298,7 @@ public class HomeActivity extends Activity {
         cl.topMargin = px(TOP);
         root.addView(clock, cl);
 
-        date = Ui.text(this, Ui.medium(), 13, 0xD9F5F5F7);
-        date.setLetterSpacing(0.14f);
+        date = Ui.text(this, Ui.regular(), 16, 0xB3F5F5F7);
         date.setShadowLayer(px(8), 0, px(1), 0x59000000);
         FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         dl.leftMargin = px(GUTTER);
@@ -332,7 +334,7 @@ public class HomeActivity extends Activity {
         hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setAlpha(0f);
-        heroEyebrow = Ui.text(this, Ui.semibold(), 12, Ui.TEXT_DIM);
+        heroEyebrow = Ui.text(this, Ui.semibold(), 13, 0xB3F5F5F7);
         heroEyebrow.setLetterSpacing(0.16f);
         heroTitle = Ui.text(this, Ui.semibold(), 30, Ui.TEXT);
         heroTitle.setSingleLine(true);
@@ -366,10 +368,10 @@ public class HomeActivity extends Activity {
         drawerHeader = new LinearLayout(this);
         drawerHeader.setGravity(Gravity.CENTER_VERTICAL);
         drawerHeader.setVisibility(View.GONE);
-        TextView dt = Ui.text(this, Ui.semibold(), 24, Ui.TEXT);
+        TextView dt = Ui.text(this, Ui.semibold(), 28, Ui.TEXT);
         dt.setText(R.string.all_apps);
         drawerHeader.addView(dt, new LinearLayout.LayoutParams(0, -2, 1));
-        TextView hint = Ui.text(this, Ui.regular(), 13, Ui.TEXT_FAINT);
+        TextView hint = Ui.text(this, Ui.regular(), 14, Ui.TEXT_FAINT);
         hint.setText("Hold OK to pin, move or remove");
         drawerHeader.addView(hint);
         FrameLayout.LayoutParams hdl = new FrameLayout.LayoutParams(-1, px(HEADER - 12), Gravity.TOP);
@@ -489,7 +491,7 @@ public class HomeActivity extends Activity {
         styleGear(false);
         dockFocus = Math.max(0, Math.min(i, dockViews.size() - 1));
         for (int k = 0; k < dockViews.size(); k++) setFocused(dockViews.get(k), k == dockFocus, true);
-        for (View v : contentViews) setFocused(v, false, false);
+        unfocusContent();
         scrollIntoView(dockScroll, dockViews.get(dockFocus));
         if (mode == Mode.HOME) onTileFocused(dockTiles.get(dockFocus));
     }
@@ -497,14 +499,28 @@ public class HomeActivity extends Activity {
     private void focusGear() {
         zone = Zone.GEAR;
         markSpotTile();
-        for (View v : contentViews) setFocused(v, false, false);
+        unfocusContent();
         styleGear(true);
     }
 
+    private void unfocusContent() {
+        for (View v : contentViews) {
+            setFocused(v, false, false);
+            caption(v).setTextColor(CAPTION);
+        }
+        dockScroll.animate().alpha(1f).setDuration(200).setInterpolator(Ui.EASE).start();
+    }
+
+    private static TextView caption(View contentTile) {
+        return (TextView) ((ViewGroup) contentTile).getChildAt(1);
+    }
+
     private void styleGear(boolean focused) {
-        gear.setBackground(Ui.circle(focused ? 0xFFFFFFFF : 0x33FFFFFF));
+        GradientDrawable disc = Ui.circle(focused ? 0xFFFFFFFF : 0x59000000);
+        if (!focused) disc.setStroke(px(1), 0x33FFFFFF);
+        gear.setBackground(disc);
         gear.setColorFilter(focused ? 0xFF111317 : 0xFFFFFFFF);
-        gear.animate().scaleX(focused ? 1.12f : 1f).scaleY(focused ? 1.12f : 1f).setDuration(160).setInterpolator(Ui.EASE).start();
+        gear.animate().scaleX(focused ? ZOOM : 1f).scaleY(focused ? ZOOM : 1f).setDuration(160).setInterpolator(Ui.EASE).start();
     }
 
     private void scrollIntoView(HorizontalScrollView s, View tile) {
@@ -649,24 +665,29 @@ public class HomeActivity extends Activity {
         FrameLayout outer = new FrameLayout(this);
         outer.setPadding(px(RING), px(RING), px(RING), px(RING));
         FrameLayout card = new FrameLayout(this);
-        card.setBackground(Ui.rounded(Ui.CARD, px(10)));
-        Ui.clip(card, px(10));
+        card.setBackground(Ui.rounded(Ui.CARD, px(Ui.RADIUS)));
+        Ui.clip(card, px(Ui.RADIUS));
         ImageView img = new ImageView(this);
         img.setScaleType(ImageView.ScaleType.CENTER_CROP);
         card.addView(img, full());
         if (it.progress > 0.02f) {
             View track = new View(this);
-            track.setBackgroundColor(0x66000000);
-            FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(-1, px(4), Gravity.BOTTOM);
+            track.setBackground(Ui.rounded(0x40FFFFFF, px(1.5f)));
+            FrameLayout.LayoutParams tl = new FrameLayout.LayoutParams(px(contentW - 20), px(3), Gravity.BOTTOM | Gravity.START);
+            tl.leftMargin = px(10);
+            tl.bottomMargin = px(8);
             card.addView(track, tl);
             View bar = new View(this);
-            bar.setBackgroundColor(0xFFE5A00D);
-            FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(Math.round(px(contentW) * it.progress), px(4), Gravity.BOTTOM);
+            bar.setBackground(Ui.rounded(0xFFFFFFFF, px(1.5f)));
+            FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(
+                    Math.max(px(3), Math.round(px(contentW - 20) * it.progress)), px(3), Gravity.BOTTOM | Gravity.START);
+            bl.leftMargin = px(10);
+            bl.bottomMargin = px(8);
             card.addView(bar, bl);
         }
         outer.addView(card, new FrameLayout.LayoutParams(px(contentW), px(contentH)));
         col.addView(outer, new LinearLayout.LayoutParams(px(contentW + 2 * RING), px(contentH + 2 * RING)));
-        TextView cap = Ui.text(this, Ui.medium(), 13, 0xCCF5F5F7);
+        TextView cap = Ui.text(this, Ui.medium(), 13, CAPTION);
         cap.setText(it.title);
         cap.setSingleLine(true);
         cap.setEllipsize(TextUtils.TruncateAt.END);
@@ -700,7 +721,11 @@ public class HomeActivity extends Activity {
         styleGear(false);
         contentFocus = Math.max(0, Math.min(i, contentViews.size() - 1));
         markSpotTile();
-        for (int k = 0; k < contentViews.size(); k++) setFocused(contentViews.get(k), k == contentFocus, false);
+        for (int k = 0; k < contentViews.size(); k++) {
+            setFocused(contentViews.get(k), k == contentFocus, false);
+            caption(contentViews.get(k)).setTextColor(k == contentFocus ? Ui.TEXT : CAPTION);
+        }
+        dockScroll.animate().alpha(0.5f).setDuration(200).setInterpolator(Ui.EASE).start();
         View col = contentViews.get(contentFocus);
         contentScroll.post(() -> {
             int x = col.getLeft();
@@ -874,7 +899,7 @@ public class HomeActivity extends Activity {
         drawerHeader.animate().alpha(1f).setStartDelay(140).setDuration(260).start();
         drawerScroll.setAlpha(1f);
         for (View v : new View[]{clock, date, gear}) v.animate().alpha(0f).setDuration(160).start();
-        dockScroll.animate().translationY(liftedDockY()).setDuration(460).setInterpolator(Ui.EASE).start();
+        dockScroll.animate().alpha(1f).translationY(liftedDockY()).setDuration(460).setInterpolator(Ui.EASE).start();
         for (int r = 0; r < gridRows.size(); r++) {
             View row = gridRows.get(r);
             row.setAlpha(0f);
@@ -923,8 +948,13 @@ public class HomeActivity extends Activity {
         gridRows.clear();
         for (Tile t : catalog) if (!pins.isPinned(t.id)) gridTiles.add(t);
         gridTiles.add(Tile.getApps());
-        gridCols = Math.max(1, (availW + DockLayout.GAP) / (120 + DockLayout.GAP));
-        gridW = (availW - (gridCols - 1) * DockLayout.GAP) / gridCols;
+        if (layout.rows == 1 && layout.cols >= 5) {
+            gridCols = layout.cols;
+            gridW = layout.tileW;
+        } else {
+            gridCols = Math.max(1, (availW + DockLayout.GAP) / (120 + DockLayout.GAP));
+            gridW = (availW - (gridCols - 1) * DockLayout.GAP) / gridCols;
+        }
         gridH = Math.round(gridW * 9f / 16f);
 
         TextView label = Ui.text(this, Ui.semibold(), 12, Ui.TEXT_DIM);
@@ -1130,11 +1160,12 @@ public class HomeActivity extends Activity {
     private void openTileMenu(Tile t) {
         List<MenuItem> items = new ArrayList<>();
         boolean pinned = pins.isPinned(t.id);
-        items.add(new MenuItem(pinned ? "Remove from home" : "Add to home", null, false, false, () -> {
+        MenuItem toggle = new MenuItem(pinned ? "Remove from home" : "Add to home", null, false, false, () -> {
             pins.toggle(t.id);
             savePins();
             afterPinChange(t.id);
-        }));
+        });
+        if (!pinned) items.add(toggle);
         int at = indexOf(dockTiles, t.id);
         if (pinned && at > 0) {
             items.add(new MenuItem("Move left", null, false, true, () -> movePin(t, -1)));
@@ -1149,6 +1180,7 @@ public class HomeActivity extends Activity {
             }
             items.add(new MenuItem("App info", null, false, false, () -> startSafe(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     Uri.parse("package:" + t.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
+            if (pinned) items.add(toggle);
             if (canUninstall(t.pkg)) {
                 items.add(new MenuItem("Uninstall", null, false, false, () -> startSafe(new Intent(Intent.ACTION_DELETE,
                         Uri.parse("package:" + t.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
@@ -1161,6 +1193,7 @@ public class HomeActivity extends Activity {
                 openTileMenu(t);
                 focusMenu(keep);
             }));
+            if (pinned) items.add(toggle);
         }
         openMenu(t, items);
         if (t.kind == Tile.Kind.APP && !sourcesByPkg.containsKey(t.pkg)) {
@@ -1352,6 +1385,12 @@ public class HomeActivity extends Activity {
     private View tileView(Tile t, int wDp, int hDp) {
         FrameLayout outer = new FrameLayout(this);
         outer.setPadding(px(RING), px(RING), px(RING), px(RING));
+        // The shadow follows the card, not the ring space around it.
+        outer.setOutlineProvider(new ViewOutlineProvider() {
+            @Override public void getOutline(View v, Outline o) {
+                o.setRoundRect(px(RING), px(RING), v.getWidth() - px(RING), v.getHeight() - px(RING), px(Ui.RADIUS));
+            }
+        });
         FrameLayout card = new FrameLayout(this);
         Ui.clip(card, px(Ui.RADIUS));
         switch (t.kind) {
@@ -1365,8 +1404,8 @@ public class HomeActivity extends Activity {
                     card.addView(img, full());
                 } else {
                     int brand = brandColor(t.pkg);
-                    card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                            new int[]{blend(brand, 0xFF15171C, 0.45f), blend(brand, 0xFF15171C, 0.8f)}));
+                    card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                            new int[]{blend(brand, 0xFF2A2E36, 0.85f), 0xFF1C1F25}));
                     glyphAndLabel(card, appIcon(t.pkg), false, t.label, hDp);
                 }
                 break;
@@ -1405,17 +1444,21 @@ public class HomeActivity extends Activity {
         if (glyph != null) {
             ImageView g = new ImageView(this);
             g.setImageDrawable(glyph);
-            if (tint) g.setColorFilter(0xFFE8EAED);
-            int size = tint ? (small ? 20 : 24) : (small ? 26 : 32);
+            int size = small ? 24 : 32;
+            if (tint) {
+                g.setColorFilter(0xFFE8EAED);
+                int pad = small ? 3 : 4;
+                g.setPadding(px(pad), px(pad), px(pad), px(pad));
+            }
             col.addView(g, new LinearLayout.LayoutParams(px(size), px(size)));
         }
-        TextView tv = Ui.text(this, Ui.medium(), small ? 11 : 12.5f, Ui.TEXT);
+        TextView tv = Ui.text(this, Ui.medium(), small ? 12 : 13, Ui.TEXT);
         tv.setText(label);
         tv.setSingleLine(true);
         tv.setEllipsize(TextUtils.TruncateAt.END);
         tv.setGravity(Gravity.CENTER);
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
-        tl.topMargin = px(small ? 5 : 7);
+        tl.topMargin = px(small ? 3 : 6);
         tl.leftMargin = tl.rightMargin = px(8);
         col.addView(tv, tl);
         card.addView(col, full());
@@ -1509,7 +1552,7 @@ public class HomeActivity extends Activity {
         Date now = new Date();
         boolean h24 = android.text.format.DateFormat.is24HourFormat(this);
         clock.setText(new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.getDefault()).format(now));
-        date.setText(new SimpleDateFormat("EEEE d MMMM", Locale.getDefault()).format(now).toUpperCase(Locale.getDefault()));
+        date.setText(new SimpleDateFormat("EEEE d MMMM", Locale.getDefault()).format(now));
         main.removeCallbacks(tick);
         main.postDelayed(tick, 60_000 - (System.currentTimeMillis() % 60_000));
     }

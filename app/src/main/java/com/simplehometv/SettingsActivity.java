@@ -90,10 +90,9 @@ public class SettingsActivity extends Activity {
         LinearLayout left = new LinearLayout(this);
         left.setOrientation(LinearLayout.VERTICAL);
         left.setPadding(px(64), px(44), px(24), px(40));
-        TextView title = Ui.text(this, Ui.semibold(), 30, Ui.TEXT);
+        TextView title = Ui.text(this, Ui.semibold(), 28, Ui.TEXT);
         title.setText("Settings");
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
-        tl.leftMargin = px(14);
         tl.bottomMargin = px(26);
         left.addView(title, tl);
         for (int i = 0; i < PAGES.length; i++) {
@@ -138,11 +137,12 @@ public class SettingsActivity extends Activity {
         rowScroll.setFadingEdgeLength(px(36));
         rowScroll.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         rowScroll.setClipToPadding(false);
-        rowScroll.setPadding(0, 0, 0, px(40));
         rowBox = new LinearLayout(this);
         rowBox.setOrientation(LinearLayout.VERTICAL);
         rowScroll.addView(rowBox, new FrameLayout.LayoutParams(-1, -2));
-        right.addView(rowScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout.LayoutParams rsl = new LinearLayout.LayoutParams(-1, 0, 1);
+        rsl.bottomMargin = px(44);
+        right.addView(rowScroll, rsl);
         FrameLayout.LayoutParams rl = new FrameLayout.LayoutParams(-1, -1);
         rl.leftMargin = px(301);
         root.addView(right, rl);
@@ -275,7 +275,7 @@ public class SettingsActivity extends Activity {
         t.setText(r.title);
         texts.addView(t);
         if (r.sub != null) {
-            TextView s = Ui.text(this, Ui.regular(), 13, Ui.TEXT_FAINT);
+            TextView s = Ui.text(this, Ui.regular(), 14, Ui.TEXT_FAINT);
             s.setText(r.sub);
             LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(-2, -2);
             sl.topMargin = px(4);
@@ -313,7 +313,7 @@ public class SettingsActivity extends Activity {
         styleRows();
         View v = rowViews.get(rowFocus);
         rowScroll.post(() -> {
-            int y = v.getTop(), h = rowScroll.getHeight() - px(40), cur = rowScroll.getScrollY();
+            int y = v.getTop(), h = rowScroll.getHeight(), cur = rowScroll.getScrollY();
             if (y < cur) rowScroll.smoothScrollTo(0, y);
             else if (y + v.getHeight() > cur + h) rowScroll.smoothScrollTo(0, y + v.getHeight() - h);
         });
