@@ -8,7 +8,7 @@ final class DockLayout {
 
     static final int AUTO = 0;
     static final int GAP = 12;
-    static final int MAX_W = 148, MAX_W_TWO_ROWS = 132;
+    static final int MAX_W = 148, MAX_W_TWO_ROWS = 116;
     static final int MIN_W_ONE_ROW = 104, MIN_W = 92;
 
     final int rows, cols, tileW, tileH;

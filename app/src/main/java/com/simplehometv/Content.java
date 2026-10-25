@@ -43,6 +43,7 @@ final class Content {
     static List<Source> sources(Context c, String pkg) {
         List<Source> out = new ArrayList<>();
         if (pkg == null) return out;
+        if (Demo.on(c)) return Demo.sources(pkg);
         if (!watchNext(c, pkg, 1).isEmpty()) {
             Source w = new Source();
             w.key = WATCH_NEXT;
@@ -75,6 +76,7 @@ final class Content {
     /** Up to {@code max} items from the sources not in {@code hidden}, deduplicated by title, in source order. */
     static List<Item> items(Context c, String pkg, List<Source> sources, Set<String> hidden, int max) {
         List<Item> out = new ArrayList<>();
+        if (Demo.on(c)) return Demo.items(pkg, sources, hidden, max);
         Set<String> seen = new HashSet<>();
         for (Source s : sources) {
             if (hidden.contains(s.key)) continue;

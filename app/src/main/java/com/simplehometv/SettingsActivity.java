@@ -133,6 +133,8 @@ public class SettingsActivity extends Activity {
         right.addView(pageTitle, pl);
         rowScroll = new ScrollView(this);
         rowScroll.setVerticalScrollBarEnabled(false);
+        rowScroll.setFocusable(false);
+        rowScroll.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         rowScroll.setClipToPadding(false);
         rowScroll.setPadding(0, 0, 0, px(40));
         rowBox = new LinearLayout(this);

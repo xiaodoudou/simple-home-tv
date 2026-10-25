@@ -174,6 +174,7 @@ public class HomeActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         String keep = currentTileId();
+        boolean onGear = mode == Mode.HOME && zone == Zone.GEAR;
         pins = new Pins(prefs.pins());
         load();
         if (mode == Mode.MENU) closeMenu();
@@ -182,8 +183,10 @@ public class HomeActivity extends Activity {
         spots.clear();
         renderDock();
         focusDock(Math.max(0, indexOf(dockTiles, keep)));
+        if (onGear) focusGear();
         updateClock();
         aerial.setActive(prefs.aerial());
+        aerial.resume();
     }
 
     @Override protected void onPause() {
@@ -377,6 +380,8 @@ public class HomeActivity extends Activity {
 
         drawerScroll = new ScrollView(this);
         drawerScroll.setVerticalScrollBarEnabled(false);
+        drawerScroll.setFocusable(false);
+        drawerScroll.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         drawerScroll.setClipToPadding(false);
         drawerScroll.setVisibility(View.GONE);
         drawerScroll.setVerticalFadingEdgeEnabled(true);
@@ -384,6 +389,7 @@ public class HomeActivity extends Activity {
         drawerGrid = new LinearLayout(this);
         drawerGrid.setOrientation(LinearLayout.VERTICAL);
         drawerGrid.setClipChildren(false);
+        drawerGrid.setClipToPadding(false);
         drawerGrid.setPadding(px(GUTTER - RING), px(VPAD), px(GUTTER - RING), px(48));
         drawerScroll.addView(drawerGrid, new FrameLayout.LayoutParams(-1, -2));
         root.addView(drawerScroll, full());
@@ -426,6 +432,7 @@ public class HomeActivity extends Activity {
         s.setClipToPadding(false);
         s.setClipChildren(false);
         s.setFocusable(false);
+        s.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
         s.setPadding(px(GUTTER - RING), px(VPAD), px(GUTTER - RING), px(VPAD));
         return s;
     }
