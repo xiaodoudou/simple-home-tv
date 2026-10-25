@@ -1,0 +1,68 @@
+package com.simplehometv;
+
+import android.content.Context;
+import android.content.SharedPreferences;
+
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
+
+/** The launcher's settings, all in one SharedPreferences file. */
+final class Prefs {
+
+    private final SharedPreferences p;
+
+    Prefs(Context c) {
+        p = c.getSharedPreferences("home", Context.MODE_PRIVATE);
+    }
+
+    String pins() { return p.getString("pins", null); }
+    void setPins(String csv) { p.edit().putString("pins", csv).apply(); }
+
+    /** {@link DockLayout#AUTO}, 1 or 2. */
+    int dockRows() { return p.getInt("dock_rows", DockLayout.AUTO); }
+    void setDockRows(int rows) { p.edit().putInt("dock_rows", rows).apply(); }
+
+    boolean aerial() { return p.getBoolean("aerial", true); }
+    void setAerial(boolean on) { p.edit().putBoolean("aerial", on).apply(); }
+
+    /** Show an app's content (Continue watching, channels) when its tile is focused. */
+    boolean spotlight() { return p.getBoolean("spotlight", true); }
+    void setSpotlight(boolean on) { p.edit().putBoolean("spotlight", on).apply(); }
+
+    /** Show a live picture when an input tile is focused. */
+    boolean preview() { return p.getBoolean("preview", true); }
+    void setPreview(boolean on) { p.edit().putBoolean("preview", on).apply(); }
+
+    /** The content sources ({@link Content.Source#key}) hidden from an app's spotlight. */
+    Set<String> hiddenSources(String pkg) {
+        return set("hide:" + pkg);
+    }
+
+    void setHiddenSources(String pkg, Set<String> keys) {
+        putSet("hide:" + pkg, keys);
+    }
+
+    boolean previewOff(String inputId) {
+        return set("nopreview").contains(inputId);
+    }
+
+    void setPreviewOff(String inputId, boolean off) {
+        Set<String> s = set("nopreview");
+        if (off) s.add(inputId);
+        else s.remove(inputId);
+        putSet("nopreview", s);
+    }
+
+    // Stored as text: StringSet values must never be mutated in place, which is an easy trap.
+    private Set<String> set(String key) {
+        String v = p.getString(key, "");
+        Set<String> out = new HashSet<>();
+        if (!v.isEmpty()) out.addAll(Arrays.asList(v.split("\n")));
+        return out;
+    }
+
+    private void putSet(String key, Set<String> s) {
+        p.edit().putString(key, String.join("\n", s)).apply();
+    }
+}

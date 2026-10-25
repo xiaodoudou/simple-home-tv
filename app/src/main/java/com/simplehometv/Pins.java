@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Predicate;
 
 /**
  * The user's pinned tiles, kept as an ordered comma-separated list of tile ids. Pure logic with no Android
@@ -37,6 +38,23 @@ public final class Pins {
 
     public void unpin(String id) {
         ids.remove(id);
+    }
+
+    /**
+     * Swaps a pinned id with its nearest neighbour in direction {@code delta} (-1 or 1) for which {@code present}
+     * holds, so pins of uninstalled apps never absorb a move. Returns false if it cannot move.
+     */
+    public boolean move(String id, int delta, Predicate<String> present) {
+        int from = ids.indexOf(id);
+        if (from < 0 || delta == 0) return false;
+        int step = delta < 0 ? -1 : 1;
+        for (int to = from + step; to >= 0 && to < ids.size(); to += step) {
+            if (!present.test(ids.get(to))) continue;
+            ids.set(from, ids.get(to));
+            ids.set(to, id);
+            return true;
+        }
+        return false;
     }
 
     public List<String> ids() {

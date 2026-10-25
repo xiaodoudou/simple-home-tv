@@ -54,6 +54,28 @@ public class PinsTest {
         assertEquals(Arrays.asList("c", "a", "b", "d"), p.order(items, ID));
     }
 
+    @Test public void moveSwapsWithNeighbour() {
+        Pins p = new Pins("a,b,c");
+        assertTrue(p.move("b", -1, s -> true));
+        assertEquals("b,a,c", p.serialize());
+        assertTrue(p.move("b", 1, s -> true));
+        assertEquals("a,b,c", p.serialize());
+    }
+
+    @Test public void moveStopsAtTheEnds() {
+        Pins p = new Pins("a,b");
+        assertFalse(p.move("a", -1, s -> true));
+        assertFalse(p.move("b", 1, s -> true));
+        assertFalse(p.move("zz", 1, s -> true));
+        assertEquals("a,b", p.serialize());
+    }
+
+    @Test public void moveSkipsAbsentIds() {
+        Pins p = new Pins("a,gone,b");
+        assertTrue(p.move("a", 1, s -> !s.equals("gone")));
+        assertEquals("b,gone,a", p.serialize());
+    }
+
     @Test public void orderKeepsUnpinnedOriginalOrder() {
         Pins p = new Pins("");
         List<String> items = Arrays.asList("d", "a", "c", "b");
