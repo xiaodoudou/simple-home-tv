@@ -61,7 +61,7 @@ public class HomeActivity extends Activity {
     private static final int RING = 4;          // room around a tile for its focus ring
     private static final int VPAD = 10;         // room above and below a row for a focused tile's zoom
     private static final int HEADER = 48;       // drawer title height above the lifted bar
-    private static final float ZOOM = 1.07f;
+    private static final float ZOOM = 1f;    // focus is the ring alone, tiles keep their size
     private static final int CAPTION = 0x80F5F5F7;
 
     private float dp;
