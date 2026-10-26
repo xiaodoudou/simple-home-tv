@@ -94,8 +94,16 @@ adb shell 'for p in com.xiaomi.voicecontrol com.xiaomi.wakeupservice; do pm disa
 ```
 
 **Don't touch PatchWall** (`com.mitv.tvhome`). This firmware only lets a system app be the home screen: with PatchWall
-off, Home goes to an empty fallback screen that keeps restarting, and Simple Home can't take its place. Simple Home
-installs and runs from All apps, but it can't be the home here yet.
+off, Home goes to an empty fallback screen that keeps restarting. Simple Home gets around it with an accessibility
+service that catches the Home button and opens Simple Home instead. Turn it on from Simple Home's Settings > Home, or
+with adb:
+
+```sh
+adb shell settings put secure enabled_accessibility_services com.simplehometv/.HomeButton
+adb shell settings put secure accessibility_enabled 1
+```
+
+PatchWall still shows for a moment when you leave an app with Back, and after the TV starts.
 
 Keep the settings (`com.xiaomi.mitv.settings`, `com.xiaomi.tvqs`), the inputs player (`com.xiaomi.mitv.tvplayer`),
 anything starting with `mitv.service` or `com.mediatek`, the Sogou keyboard, the system updater

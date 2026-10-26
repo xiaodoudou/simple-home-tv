@@ -206,6 +206,11 @@ public class SettingsActivity extends Activity {
             if (fs != null) for (File f : fs) //noinspection ResultOfMethodCallIgnored
                 f.delete();
         }));
+        if (HomeButton.stockHome(this) != null) {
+            rows.add(new Row("Open Simple Home with the Home button", "This TV keeps its own home: turn on \""
+                    + getString(R.string.home_button) + "\" in Accessibility", onOff(HomeButton.on(this)),
+                    () -> open(Settings.ACTION_ACCESSIBILITY_SETTINGS, Settings.ACTION_SETTINGS)));
+        }
     }
 
     private void clipRows() {

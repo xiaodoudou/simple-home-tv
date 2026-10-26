@@ -2,4 +2,6 @@
 <resources>
     <string name="app_name">Simple Home</string>
     <string name="all_apps">All apps</string>
+    <string name="home_button">Simple Home: Home button</string>
+    <string name="home_button_description">Opens Simple Home when you press Home, on TVs that keep their own home screen. It only reads the Home button and which app comes to the front.</string>
 </resources>

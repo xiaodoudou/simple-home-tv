@@ -43,6 +43,9 @@ adb shell cmd package set-home-activity com.simplehometv/.HomeActivity
 
 Press Home on the remote and you are there. If the TV asks which home app to use, pick Simple Home.
 
+Some firmwares (Xiaomi's Chinese one) only let their own home be the home. There, turn on "Simple Home: Home
+button" in the TV's Accessibility settings and the Home button opens Simple Home anyway.
+
 It needs Android TV 7 or later. The rows of what's on need Android 8, since that's when apps got a way to publish
 them.
 
