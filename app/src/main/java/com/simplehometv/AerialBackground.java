@@ -528,7 +528,9 @@ public class AerialBackground extends FrameLayout {
             else mp.setSurface(surface);
             mp.setVolume(0f, 0f);
             mp.setDataSource(source);
+            // A released player is let go off the main thread, so its callbacks can still arrive: ignore them.
             mp.setOnPreparedListener(p -> {
+                if (p != mp) return;
                 retries = 0;
                 revealAt = resumeAt;
                 if (resumeAt > 0) {
@@ -540,15 +542,18 @@ public class AerialBackground extends FrameLayout {
             });
             loading(true);
             mp.setOnInfoListener((p, what, extra) -> {
-                if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                if (p == mp && what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
                     loading(!local);            // a streamed clip is still downloading
                     if (holdPaused) waitCaughtUp(p, SystemClock.uptimeMillis());
                     else cover.animate().alpha(0f).setDuration(900).start();
                 }
                 return false;
             });
-            mp.setOnCompletionListener(p -> cover.animate().alpha(1f).setDuration(500).withEndAction(this::playNext).start());
+            mp.setOnCompletionListener(p -> {
+                if (p == mp) cover.animate().alpha(1f).setDuration(500).withEndAction(this::playNext).start();
+            });
             mp.setOnErrorListener((p, w, e) -> {
+                if (p != mp) return true;
                 Log.w(TAG, "can't play " + source + " (" + w + "/" + e + ")");
                 release();
                 if (frozen) return true;        // an input took the decoder; the frozen frame stays
@@ -658,10 +663,17 @@ public class AerialBackground extends FrameLayout {
         if (playing == this) playing = null;
         loading(false);
         if (mp != null) {
-            try { mp.release(); } catch (Exception ignored) { }
+            MediaPlayer old = mp;
             mp = null;
+            // Some media servers (Xiaomi's) take seconds to answer a release; on the main thread that is an ANR,
+            // and the firmware then force-stops the app, which also switches off the Home button service.
+            releaser.execute(() -> {
+                try { old.release(); } catch (Exception ignored) { }
+            });
         }
     }
+
+    private static final ExecutorService releaser = Executors.newSingleThreadExecutor();
 
     private java.util.function.Consumer<Boolean> onLoading;
     private boolean isLoading;
