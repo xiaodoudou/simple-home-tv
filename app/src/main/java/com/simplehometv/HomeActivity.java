@@ -1113,7 +1113,6 @@ public class HomeActivity extends Activity {
         gridViews.clear();
         gridRows.clear();
         for (Tile t : catalog) if (!pins.isPinned(t.id)) gridTiles.add(t);
-        gridTiles.add(Tile.getApps());
         if (layout.rows == 1 && layout.cols >= 5) {
             gridCols = layout.cols;
             gridW = layout.tileW;
@@ -1297,9 +1296,6 @@ public class HomeActivity extends Activity {
             case ALL_APPS:
                 if (mode == Mode.HOME) openDrawer();
                 else closeDrawer();
-                break;
-            case GET_APPS:
-                startSafe(new Intent(this, SettingsActivity.class).putExtra(SettingsActivity.EXTRA_PAGE, SettingsActivity.PAGE_APPS));
                 break;
             case INPUT:
                 cool();             // the TV app needs the input
@@ -1589,11 +1585,6 @@ public class HomeActivity extends Activity {
                     dl.rightMargin = px(9);
                     card.addView(dot, dl);
                 }
-                break;
-            case GET_APPS:
-                card.setBackground(Ui.rounded(0xFF1A1D23, px(Ui.RADIUS)));
-                card.setForeground(Ui.stroke(0x33FFFFFF, px(1), px(Ui.RADIUS)));
-                glyphAndLabel(card, getDrawable(R.drawable.ic_get), true, null, hDp);
                 break;
             default:
                 card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF3A3F4B, 0xFF262A33}));

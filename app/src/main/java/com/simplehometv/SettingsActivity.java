@@ -28,7 +28,6 @@ import java.util.List;
 public class SettingsActivity extends Activity {
 
     static final String EXTRA_PAGE = "page";
-    static final int PAGE_APPS = 4;
 
     private static final String[] PAGES = {"Home", "Network", "Display & sound", "Inputs", "Apps", "Screensaver", "About", "Android settings"};
     private static final int[] ICONS = {R.drawable.ic_home, R.drawable.ic_wifi, R.drawable.ic_display, R.drawable.ic_input,
