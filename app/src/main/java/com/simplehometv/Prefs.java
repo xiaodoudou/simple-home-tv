@@ -63,6 +63,18 @@ final class Prefs {
         putSet("hide:" + pkg, keys);
     }
 
+    /** Ids ({@link Tile#id}) of the apps and inputs hidden from All apps. Pinned tiles show regardless. */
+    Set<String> hiddenTiles() {
+        return set("hidden");
+    }
+
+    void setHidden(String tileId, boolean hide) {
+        Set<String> s = set("hidden");
+        if (hide) s.add(tileId);
+        else s.remove(tileId);
+        putSet("hidden", s);
+    }
+
     boolean previewOff(String inputId) {
         return set("nopreview").contains(inputId);
     }

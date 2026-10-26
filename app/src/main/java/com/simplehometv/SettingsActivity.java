@@ -240,9 +240,15 @@ public class SettingsActivity extends Activity {
             return;
         }
         Pins pins = new Pins(prefs.pins());
+        java.util.Set<String> hidden = prefs.hiddenTiles();
         for (Tile t : inputs) {
-            boolean on = pins.isPinned(t.id);
-            rows.add(new Row(t.label, t.on ? "On" : t.connected ? "In standby" : "Nothing connected", on ? "On home" : "Hidden", () -> {
+            boolean on = pins.isPinned(t.id), gone = !on && hidden.contains(t.id);
+            rows.add(new Row(t.label, t.on ? "On" : t.connected ? "In standby" : "Nothing connected",
+                    on ? "On home" : gone ? "Hidden" : "In All apps", () -> {
+                if (gone) {
+                    prefs.setHidden(t.id, false);
+                    return;
+                }
                 Pins p = new Pins(prefs.pins());
                 p.toggle(t.id);
                 prefs.setPins(p.serialize());
@@ -273,6 +279,13 @@ public class SettingsActivity extends Activity {
                 rows.add(new Row(a.name, a.why, "Needs a store", null));
             }
         }
+        java.util.Set<String> hidden = prefs.hiddenTiles();
+        Pins pins = new Pins(prefs.pins());
+        List<Tile> gone = new ArrayList<>();
+        for (Tile t : Catalog.apps(this)) if (hidden.contains(t.id) && !pins.isPinned(t.id)) gone.add(t);
+        if (gone.isEmpty()) return;
+        rows.add(new Row("Hidden from All apps", "Select one to show it again", null, null));
+        for (Tile t : gone) rows.add(new Row(t.label, null, "Show", () -> prefs.setHidden(t.id, false)));
     }
 
     private void screensaverRows() {

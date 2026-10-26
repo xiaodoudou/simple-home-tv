@@ -264,6 +264,8 @@ public class HomeActivity extends Activity {
             for (Tile t : catalog) if (t.kind == Tile.Kind.APP && apps++ < 6) pins.pin(t.id);
             savePins();
         }
+        Set<String> hidden = prefs.hiddenTiles();
+        catalog.removeIf(t -> hidden.contains(t.id) && !pins.isPinned(t.id));
     }
 
     private void savePins() {
@@ -400,7 +402,7 @@ public class HomeActivity extends Activity {
         dt.setText(R.string.all_apps);
         drawerHeader.addView(dt, new LinearLayout.LayoutParams(0, -2, 1));
         TextView hint = Ui.text(this, Ui.regular(), 14, Ui.TEXT_FAINT);
-        hint.setText("Hold OK to add to your home");
+        hint.setText("Hold OK to add to your home or hide");
         drawerHeader.addView(hint);
         FrameLayout.LayoutParams hdl = new FrameLayout.LayoutParams(-1, px(HEADER - 12), Gravity.TOP);
         hdl.leftMargin = px(GUTTER);
@@ -1409,6 +1411,7 @@ public class HomeActivity extends Activity {
             savePins();
             afterPinChange(t.id);
         });
+        MenuItem hide = new MenuItem("Hide", null, false, false, () -> hideTile(t));
         if (!pinned) items.add(toggle);
         if (pinned && dockTiles.size() > 2) items.add(new MenuItem("Move", null, false, false, () -> startMove(t)));
         if (t.kind == Tile.Kind.APP) {
@@ -1419,6 +1422,7 @@ public class HomeActivity extends Activity {
             items.add(new MenuItem("App info", null, false, false, () -> startSafe(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
                     Uri.parse("package:" + t.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
             if (pinned) items.add(toggle);
+            else items.add(hide);
             if (canUninstall(t.pkg)) {
                 items.add(new MenuItem("Uninstall", null, false, false, () -> startSafe(new Intent(Intent.ACTION_DELETE,
                         Uri.parse("package:" + t.pkg)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
@@ -1432,6 +1436,7 @@ public class HomeActivity extends Activity {
                 focusMenu(keep);
             }));
             if (pinned) items.add(toggle);
+            else items.add(hide);
         }
         openMenu(t, items);
         if (t.kind == Tile.Kind.APP && !sourcesByPkg.containsKey(t.pkg)) {
@@ -1617,7 +1622,7 @@ public class HomeActivity extends Activity {
         int to = Math.max(0, Math.min(dockTiles.size() - 2, from + steps));     // All apps stays last
         if (from < 0 || to == from) return;
         if (glideFrom == null) {
-            glideFrom = dockPositions();
+            glideFrom = positions(dockViews, dockTiles);
             dockBox.getViewTreeObserver().addOnPreDrawListener(glide);
         }
         int step = to > from ? 1 : -1;
@@ -1646,35 +1651,64 @@ public class HomeActivity extends Activity {
         focusDock(dockFocus);
     }
 
-    /** Where each dock tile is drawn now, by id, counting any glide still under way. */
-    private Map<String, float[]> dockPositions() {
+    /** Where each tile in a row-of-rows box is drawn now, by id, counting any glide still under way. */
+    private static Map<String, float[]> positions(List<View> views, List<Tile> tiles) {
         Map<String, float[]> at = new HashMap<>();
-        for (int k = 0; k < dockViews.size(); k++) {
-            View v = dockViews.get(k), row = (View) v.getParent();
-            at.put(dockTiles.get(k).id, new float[]{row.getLeft() + v.getLeft() + v.getTranslationX(),
+        for (int k = 0; k < views.size(); k++) {
+            View v = views.get(k), row = (View) v.getParent();
+            at.put(tiles.get(k).id, new float[]{row.getLeft() + v.getLeft() + v.getTranslationX(),
                     row.getTop() + v.getTop() + v.getTranslationY()});
         }
         return at;
     }
 
-    /** Runs once the re-rendered dock is laid out and before it is drawn, so tiles start where they were. */
+    /** After a re-render is laid out and before it is drawn: tiles start where {@code from} saw them, then slide. */
+    private static void slideFrom(Map<String, float[]> from, List<View> views, List<Tile> tiles) {
+        for (int k = 0; k < views.size(); k++) {
+            float[] was = from.get(tiles.get(k).id);
+            if (was == null) continue;
+            View v = views.get(k), row = (View) v.getParent();
+            v.setTranslationX(was[0] - row.getLeft() - v.getLeft());
+            v.setTranslationY(was[1] - row.getTop() - v.getTop());
+            v.animate().translationX(0).translationY(0).setDuration(200).setInterpolator(Ui.EASE).start();
+        }
+    }
+
     private final ViewTreeObserver.OnPreDrawListener glide = new ViewTreeObserver.OnPreDrawListener() {
         @Override public boolean onPreDraw() {
             dockBox.getViewTreeObserver().removeOnPreDrawListener(this);
             Map<String, float[]> from = glideFrom;
             glideFrom = null;
-            if (from == null) return true;
-            for (int k = 0; k < dockViews.size(); k++) {
-                float[] was = from.get(dockTiles.get(k).id);
-                if (was == null) continue;
-                View v = dockViews.get(k), row = (View) v.getParent();
-                v.setTranslationX(was[0] - row.getLeft() - v.getLeft());
-                v.setTranslationY(was[1] - row.getTop() - v.getTop());
-                v.animate().translationX(0).translationY(0).setDuration(200).setInterpolator(Ui.EASE).start();
-            }
+            if (from != null) slideFrom(from, dockViews, dockTiles);
             return true;
         }
     };
+
+    // ---- hiding from All apps ----
+
+    /** The tile fades, the rest of the grid glides into its place; Settings lists it to bring it back. */
+    private void hideTile(Tile t) {
+        int bar = dockTiles.size(), g = indexOf(gridTiles, t.id);
+        if (g < 0) return;
+        prefs.setHidden(t.id, true);
+        gridViews.get(g).animate().alpha(0f).setStartDelay(0).setDuration(160).withEndAction(() -> {
+            if (mode != Mode.DRAWER && !(mode == Mode.MENU && menuReturn == Mode.DRAWER)) return;
+            int f = drawerFocus - bar;
+            String keep = f >= 0 && f < gridTiles.size() ? gridTiles.get(f).id : null;
+            catalog.removeIf(c -> c.id.equals(t.id));
+            Map<String, float[]> before = positions(gridViews, gridTiles);
+            renderGrid();
+            drawerGrid.getViewTreeObserver().addOnPreDrawListener(new ViewTreeObserver.OnPreDrawListener() {
+                @Override public boolean onPreDraw() {
+                    drawerGrid.getViewTreeObserver().removeOnPreDrawListener(this);
+                    slideFrom(before, gridViews, gridTiles);
+                    return true;
+                }
+            });
+            int k = indexOf(gridTiles, keep);
+            focusDrawer(k >= 0 ? bar + k : gridTiles.isEmpty() ? bar - 1 : bar + Math.min(g, gridTiles.size() - 1));
+        }).start();
+    }
 
     /** Chevrons on the moving tile, on the sides it can still go. */
     private void addArrows(boolean fadeIn) {
