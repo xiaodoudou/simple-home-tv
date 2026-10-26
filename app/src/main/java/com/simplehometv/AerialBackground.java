@@ -5,6 +5,7 @@ import android.graphics.drawable.GradientDrawable;
 import android.media.MediaPlayer;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.util.Log;
 import android.view.Display;
 import android.view.SurfaceHolder;
@@ -63,6 +64,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private int resumeAt;
     private Runnable onShown;
     private Runnable afterPause;
+    private int revealAt;               // the paused position: the still stays until the video is back there
 
     public AerialBackground(Context c) {
         super(c);
@@ -154,6 +156,29 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         } catch (Exception e) {
             leavePlane();
         }
+    }
+
+    /**
+     * Fades the still out once the resumed video is back at the paused frame. This TV's decoder resumes from the
+     * keyframe before it, up to a few seconds earlier; fading at once would show the picture jump back.
+     */
+    private void revealWhenCaughtUp(MediaPlayer p, long since) {
+        if (p != mp || still.getVisibility() != VISIBLE) return;
+        int at;
+        try {
+            at = p.getCurrentPosition();
+        } catch (Exception e) {
+            at = Integer.MAX_VALUE;
+        }
+        if (at + 40 < revealAt && SystemClock.uptimeMillis() - since < 4000) {
+            main.postDelayed(() -> revealWhenCaughtUp(p, since), 40);
+            return;
+        }
+        still.animate().cancel();
+        still.animate().alpha(0f).setDuration(250).withEndAction(() -> {
+            still.setVisibility(GONE);
+            still.setImageBitmap(null);
+        }).start();
     }
 
     /** The paused frame, or null when there is none. */
@@ -267,6 +292,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             mp.setDataSource(source);
             mp.setOnPreparedListener(p -> {
                 retries = 0;
+                revealAt = resumeAt;
                 if (resumeAt > 0) {
                     if (android.os.Build.VERSION.SDK_INT >= 26) p.seekTo(resumeAt, MediaPlayer.SEEK_CLOSEST);
                     else p.seekTo(resumeAt);
@@ -277,15 +303,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
                     cover.animate().alpha(0f).setDuration(900).start();
-                    if (still.getVisibility() == VISIBLE) {
-                        // The first decoded frame reaches the screen a little after this: fade once it is there.
-                        still.animate().cancel();
-                        still.animate().alpha(0f).setStartDelay(150).setDuration(300).withEndAction(() -> {
-                            still.setVisibility(GONE);
-                            still.setImageBitmap(null);
-                            still.animate().setStartDelay(0);
-                        }).start();
-                    }
+                    if (still.getVisibility() == VISIBLE) revealWhenCaughtUp(p, SystemClock.uptimeMillis());
                     if (onShown != null) {
                         Runnable r = onShown;
                         onShown = null;
