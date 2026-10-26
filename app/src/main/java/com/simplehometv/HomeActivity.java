@@ -822,8 +822,8 @@ public class HomeActivity extends Activity {
             previewFrame.setAlpha(1f);
             sizePreview(16f / 9f);
             // Starting an input makes the TV blank its video and load that input's picture settings, which shows
-            // as a black flash. So the background fades to black first, the aerial pauses under it, and the input
-            // starts in the dark; revealInput brings the picture up once the TV has settled.
+            // as a black flash. The background dims onto a still of the aerial, the box opens black, and
+            // revealInput fades the picture in once the TV has settled.
             String inputId = t.inputId;
             aerial.pauseForInput(() -> {
                 if (!inputId.equals(previewFor) || tvView == null) return;
@@ -880,10 +880,9 @@ public class HomeActivity extends Activity {
             closeInput.run();
             return;
         }
-        // The mirror of opening: fade to black, close the input in the dark, then bring the aerial back.
+        // The mirror of opening: the box fades to black, the input closes behind it, then the aerial comes back.
         previewCover.animate().cancel();
-        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(FADE_MS).start();
-        aerial.dimTo(1f, FADE_MS, closeInput);
+        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(FADE_MS).withEndAction(closeInput).start();
     }
 
     private static final long FADE_MS = 300, SETTLE_MS = 400;
@@ -892,7 +891,6 @@ public class HomeActivity extends Activity {
         if (previewFor == null) return;
         previewCover.animate().cancel();
         previewCover.animate().alpha(0f).setStartDelay(0).setDuration(450).start();
-        aerial.dimTo(AerialBackground.DIM, 450, null);
     };
 
     private final Runnable closeInput = () -> {
@@ -906,7 +904,7 @@ public class HomeActivity extends Activity {
             }
         }
         previewFrame.setVisibility(View.GONE);
-        // Wait in the dark while the TV switches its picture back, then let the aerial carry on.
+        // Let the TV switch its picture back before the aerial takes the video hardware again.
         main.postDelayed(() -> {
             if (previewFor == null) aerial.resumeAfterInput(null);
         }, resumed ? SETTLE_MS : 0);

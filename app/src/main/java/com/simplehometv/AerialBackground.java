@@ -133,7 +133,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
         cover.animate().cancel();
         dim.animate().cancel();
-        dim.animate().alpha(1f).setDuration(300).withEndAction(() -> {
+        dim.animate().alpha(DIM).setDuration(300).withEndAction(() -> {
             if (!paused || mp == null) return;
             // Pause first, so the frame copied below is the one on screen.
             try {
