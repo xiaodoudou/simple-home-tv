@@ -60,6 +60,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private String source;              // what was playing, to carry on from the same point
     private boolean sourceLocal;
     private int resumeAt;
+    private Runnable onShown;
 
     public AerialBackground(Context c) {
         super(c);
@@ -109,15 +110,21 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         } catch (Exception e) {
             resumeAt = 0;
         }
-        cover.animate().cancel();
-        cover.setAlpha(1f);
         release();
         video.setVisibility(GONE);      // frees the plane
     }
 
-    /** Carries on from where {@link #pauseForInput()} left off. */
-    public void resumeAfterInput() {
-        if (!paused) return;
+    /** Carries on from where {@link #pauseForInput()} left off; {@code onShown} runs at its first frame. */
+    public void resumeAfterInput(Runnable onShown) {
+        if (onShown != null) this.onShown = onShown;
+        if (!paused) {
+            if (mp != null && this.onShown != null && cover.getAlpha() == 0f) {
+                Runnable r = this.onShown;
+                this.onShown = null;
+                r.run();
+            }
+            return;
+        }
         paused = false;
         if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
         else if (holder != null) playNext();
@@ -188,7 +195,12 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             });
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
-                    cover.animate().alpha(0f).setDuration(900).start();
+                    cover.animate().alpha(0f).setDuration(paused ? 0 : 900).start();
+                    if (onShown != null) {
+                        Runnable r = onShown;
+                        onShown = null;
+                        r.run();
+                    }
                 }
                 return false;
             });

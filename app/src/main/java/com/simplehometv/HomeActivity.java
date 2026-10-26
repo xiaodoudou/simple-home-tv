@@ -128,7 +128,7 @@ public class HomeActivity extends Activity {
     private final Runnable holdTimer = () -> {
         if (okKey.onTimer()) onHold();
     };
-    private Runnable pendingSpot, pendingPreview, previewTimeout;
+    private Runnable pendingSpot, pendingPreview;
 
     private static final class Spot {
         final List<Content.Source> sources;
@@ -324,7 +324,6 @@ public class HomeActivity extends Activity {
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
         previewStatus = Ui.text(this, Ui.medium(), 15, Ui.TEXT_DIM);
         previewStatus.setGravity(Gravity.CENTER);
-        previewStatus.setBackgroundColor(0xFF000000);
         previewFrame.addView(previewStatus, new FrameLayout.LayoutParams(-1, -1));
         previewLabel = Ui.text(this, Ui.semibold(), 13, Ui.TEXT);
         previewLabel.setBackground(Ui.rounded(0x99000000, px(8)));
@@ -558,7 +557,7 @@ public class HomeActivity extends Activity {
                 pendingPreview = () -> startPreview(t);
                 // The TV needs a moment to close the last preview; tuning sooner gets the new one closed too.
                 long sinceStop = SystemClock.uptimeMillis() - previewStoppedAt;
-                main.postDelayed(pendingPreview, Math.max(450, 1500 - sinceStop));
+                main.postDelayed(pendingPreview, Math.max(800, 1500 - sinceStop));
             }
         }
     }
@@ -766,16 +765,11 @@ public class HomeActivity extends Activity {
                 tvView.setCallback(new TvView.TvInputCallback() {
                     @Override public void onVideoAvailable(String inputId) {
                         Log.i(TAG, "preview video available");
-                        main.removeCallbacks(previewTimeout);
-                        previewStatus.animate().alpha(0f).setDuration(250).start();
+                        showInput();
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
-                        Log.i(TAG, "preview size " + w + "x" + h);
-                        if (w > 0 && h > 0) {
-                            main.removeCallbacks(previewTimeout);
-                            previewStatus.animate().alpha(0f).setDuration(250).start();
-                        }
+                        if (w > 0 && h > 0) showInput();
                     }
 
                     @Override public void onConnectionFailed(String inputId) {
@@ -790,22 +784,17 @@ public class HomeActivity extends Activity {
                 });
                 previewFrame.addView(tvView, 0, full());
             }
+            // The aerial keeps playing over the input (the TV always draws it on top) until the input has a
+            // picture; then it steps aside, so the switch goes straight from one picture to the other.
+            main.removeCallbacks(closeInput);
             previewFor = t.inputId;
             previewLabel.setText(t.label);
             previewStatus.setText("");
-            previewStatus.animate().cancel();
-            previewStatus.setAlpha(1f);
-            aerial.pauseForInput();
+            previewFrame.animate().cancel();
+            previewFrame.setAlpha(1f);
             previewFrame.setVisibility(View.VISIBLE);
-            previewFrame.setAlpha(0f);
-            previewFrame.animate().alpha(1f).setDuration(300).setInterpolator(Ui.EASE).start();
             Log.i(TAG, "preview tune " + t.inputId);
             tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
-            main.removeCallbacks(previewTimeout);
-            previewTimeout = () -> {
-                if (previewStatus.getAlpha() == 1f) previewStatus.setText("No picture from " + t.label);
-            };
-            main.postDelayed(previewTimeout, 5000);
         } catch (Exception e) {
             Log.w(TAG, "preview failed: " + e);
             stopPreview();
@@ -823,11 +812,30 @@ public class HomeActivity extends Activity {
         }
     }
 
+    private void showInput() {
+        if (previewFor != null) aerial.pauseForInput();
+    }
+
+    /**
+     * Ends the input picture. The aerial comes back first, over it; the input closes once the aerial has a frame
+     * on screen (or after a moment, if it has none), so nothing flashes black in between.
+     */
     private void stopPreview() {
         main.removeCallbacks(pendingPreview);
-        main.removeCallbacks(previewTimeout);
         if (previewFor == null) return;
         previewFor = null;
+        if (!resumed) {
+            closeInput.run();
+            return;
+        }
+        aerial.resumeAfterInput(() -> main.post(closeInput));
+        main.removeCallbacks(closeInput);
+        main.postDelayed(closeInput, 2500);
+    }
+
+    private final Runnable closeInput = () -> {
+        main.removeCallbacks(this.closeInput);
+        if (previewFor != null) return;     // an input took the screen again meanwhile
         previewStoppedAt = SystemClock.uptimeMillis();
         if (tvView != null) {
             try {
@@ -835,10 +843,9 @@ public class HomeActivity extends Activity {
             } catch (Exception ignored) {
             }
         }
-        previewFrame.animate().cancel();
         previewFrame.setVisibility(View.GONE);
-        aerial.resumeAfterInput();
-    }
+        if (resumed) aerial.resumeAfterInput(null);
+    };
 
     // ---- all apps ----
 
