@@ -156,6 +156,25 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
     }
 
+    /** The paused frame, or null when there is none. */
+    android.graphics.Bitmap stillFrame() {
+        android.graphics.drawable.Drawable d = still.getVisibility() == VISIBLE ? still.getDrawable() : null;
+        return d instanceof android.graphics.drawable.BitmapDrawable ? ((android.graphics.drawable.BitmapDrawable) d).getBitmap() : null;
+    }
+
+    /** Runs once the window has drawn the next frame, so what was just shown is really on screen. */
+    private void afterNextFrame(Runnable r) {
+        postOnAnimation(() -> postOnAnimation(() -> main.postDelayed(r, 34)));
+    }
+
+    private void leavePlane() {
+        release();
+        video.setVisibility(GONE);      // frees the plane
+        Runnable then = afterPause;
+        afterPause = null;
+        if (then != null) then.run();
+    }
+
     /** Carries on from where {@link #pauseForInput()} left off; {@code onShown} runs at its first frame. */
     public void resumeAfterInput(Runnable onShown) {
         if (onShown != null) this.onShown = onShown;
