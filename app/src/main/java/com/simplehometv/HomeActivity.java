@@ -326,6 +326,13 @@ public class HomeActivity extends Activity {
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
         previewCover = new ImageView(this);
         previewCover.setScaleType(ImageView.ScaleType.MATRIX);
+        // Looks like the dimmed, blurred background behind the box, so the box opens without a seam.
+        previewCover.setColorFilter(Color.argb(Math.round(AerialBackground.DIM * 255), 0, 0, 0),
+                android.graphics.PorterDuff.Mode.SRC_ATOP);
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            previewCover.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
+                    AerialBackground.BLUR, AerialBackground.BLUR, android.graphics.Shader.TileMode.CLAMP));
+        }
         previewFrame.addView(previewCover, new FrameLayout.LayoutParams(-1, -1));
         previewLabel = Ui.text(this, Ui.semibold(), 13, Ui.TEXT);
         previewLabel.setBackground(Ui.rounded(0x99000000, px(8)));

@@ -50,6 +50,11 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private final SurfaceView video;
     private final View cover;
     private final android.widget.ImageView still;   // the frame the aerial was paused on, while an input shows
+    // Dims the background while an input shows. The still is drawn with the UI, which the TV's picture processing
+    // never touches, so it can't match the video's colours; the swap happens under the dim, where that can't show.
+    private final View dim;
+    static final float DIM = 0.55f;
+    static final float BLUR = 18f;
     private final File dir;
     private final Prefs prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -77,6 +82,10 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         still.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
         still.setVisibility(GONE);
         addView(still, full());
+        dim = new View(c);
+        dim.setBackgroundColor(0xFF000000);
+        dim.setAlpha(0f);
+        addView(dim, full());
         cover = new View(c);
         cover.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{0xFF141A20, 0xFF090B10, 0xFF05060A}));
@@ -123,14 +132,18 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             return;
         }
         cover.animate().cancel();
-        // Pause first, so the frame copied below is the one on screen and swapping to it changes nothing.
-        try {
-            mp.pause();
-            resumeAt = mp.getCurrentPosition();
-        } catch (Exception e) {
-            resumeAt = 0;
-        }
-        afterNextFrame(this::copyStill);
+        dim.animate().cancel();
+        dim.animate().alpha(DIM).setDuration(250).withEndAction(() -> {
+            if (!paused || mp == null) return;
+            // Pause first, so the frame copied below is the one on screen.
+            try {
+                mp.pause();
+                resumeAt = mp.getCurrentPosition();
+            } catch (Exception e) {
+                resumeAt = 0;
+            }
+            afterNextFrame(this::copyStill);
+        }).start();
     }
 
     /** Swaps the paused video for a picture of the same frame, drawn with the UI, then frees the plane. */
@@ -148,6 +161,10 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 still.animate().cancel();
                 still.setImageBitmap(frame);
                 still.setAlpha(1f);
+                if (android.os.Build.VERSION.SDK_INT >= 31) {
+                    still.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(BLUR, BLUR,
+                            android.graphics.Shader.TileMode.CLAMP));
+                }
                 still.setVisibility(VISIBLE);
                 afterNextFrame(() -> {
                     if (paused) leavePlane();
@@ -175,10 +192,10 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             return;
         }
         still.animate().cancel();
-        still.animate().alpha(0f).setDuration(250).withEndAction(() -> {
-            still.setVisibility(GONE);
-            still.setImageBitmap(null);
-        }).start();
+        still.setVisibility(GONE);
+        still.setImageBitmap(null);
+        dim.animate().cancel();
+        dim.animate().alpha(0f).setDuration(450).start();
     }
 
     /** The paused frame, or null when there is none. */
@@ -220,6 +237,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 mp.start();
             } catch (Exception ignored) {
             }
+            dim.animate().cancel();
+            dim.animate().alpha(0f).setDuration(300).start();
             still.animate().cancel();
             still.setVisibility(GONE);
             if (this.onShown != null) {
