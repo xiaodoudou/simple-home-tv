@@ -971,6 +971,8 @@ public class HomeActivity extends Activity {
             if (i % gridCols == 0) {
                 row = new LinearLayout(this);
                 row.setClipChildren(false);
+                // Fade each tile, not the row: a fading row draws through a buffer that cuts off the focus ring.
+                row.forceHasOverlappingRendering(false);
                 LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-2, -2);
                 if (i > 0) rl.topMargin = px(DockLayout.GAP + 6 - 2 * RING);
                 drawerGrid.addView(row, rl);
