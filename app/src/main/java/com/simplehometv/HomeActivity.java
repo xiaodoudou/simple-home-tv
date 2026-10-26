@@ -106,6 +106,8 @@ public class HomeActivity extends Activity {
     private int dockFocus, contentFocus, drawerFocus;
     private String spotFor;                     // tile id whose content is on screen
     private String previewFor;                  // input id the preview is tuned to
+    private long previewStoppedAt;
+    private int previewRetries;
 
     private final OkKey okKey = new OkKey();
     private long menuOpenedAt;
@@ -561,8 +563,11 @@ public class HomeActivity extends Activity {
             spotFor = null;
             clearSpot();
             if (t.kind == Tile.Kind.INPUT && prefs.preview() && !prefs.previewOff(t.inputId)) {
+                previewRetries = 0;
                 pendingPreview = () -> startPreview(t);
-                main.postDelayed(pendingPreview, 450);
+                // The TV needs a moment to close the last preview; tuning sooner gets the new one closed too.
+                long sinceStop = SystemClock.uptimeMillis() - previewStoppedAt;
+                main.postDelayed(pendingPreview, Math.max(450, 1500 - sinceStop));
             }
         }
     }
@@ -807,15 +812,19 @@ public class HomeActivity extends Activity {
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
-                        if (w > 0 && h > 0) sizePreview(w / (float) h);
+                        if (w > 0 && h > 0) {
+                            sizePreview(w / (float) h);
+                            main.removeCallbacks(previewTimeout);
+                            previewStatus.animate().alpha(0f).setDuration(250).start();
+                        }
                     }
 
                     @Override public void onConnectionFailed(String inputId) {
-                        stopPreview();
+                        retryPreview();
                     }
 
                     @Override public void onDisconnected(String inputId) {
-                        stopPreview();
+                        retryPreview();
                     }
                 });
                 previewFrame.addView(tvView, 0, full());
@@ -858,11 +867,23 @@ public class HomeActivity extends Activity {
         previewFrame.setLayoutParams(lp);
     }
 
+    /** The TV sometimes drops a preview it has just opened; try again while the tile is still focused. */
+    private void retryPreview() {
+        Tile t = mode == Mode.HOME && zone == Zone.DOCK && dockFocus < dockTiles.size() ? dockTiles.get(dockFocus) : null;
+        boolean same = t != null && t.kind == Tile.Kind.INPUT && t.inputId.equals(previewFor);
+        stopPreview();
+        if (same && previewRetries++ < 2) {
+            pendingPreview = () -> startPreview(t);
+            main.postDelayed(pendingPreview, 1500);
+        }
+    }
+
     private void stopPreview() {
         main.removeCallbacks(pendingPreview);
         main.removeCallbacks(previewTimeout);
         if (previewFor == null) return;
         previewFor = null;
+        previewStoppedAt = SystemClock.uptimeMillis();
         if (tvView != null) {
             try {
                 tvView.reset();
