@@ -102,6 +102,7 @@ public class HomeActivity extends Activity {
     private int gridCols, gridW, gridH, contentW, contentH;
 
     private Mode mode = Mode.HOME;
+    private boolean resumed;
     private Zone zone = Zone.DOCK;
     private int dockFocus, contentFocus, drawerFocus;
     private String spotFor;                     // tile id whose content is on screen
@@ -177,6 +178,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
         String keep = currentTileId();
         boolean onGear = mode == Mode.HOME && zone == Zone.GEAR;
         pins = new Pins(prefs.pins());
@@ -201,6 +203,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
+        resumed = false;
         main.removeCallbacks(tick);
         main.removeCallbacks(holdTimer);
         okKey.reset();
@@ -323,8 +326,10 @@ public class HomeActivity extends Activity {
         Ui.clip(previewFrame, px(16));
         previewFrame.setVisibility(View.GONE);
         previewFrame.setElevation(px(12));
+        // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
         previewStatus = Ui.text(this, Ui.medium(), 15, Ui.TEXT_DIM);
         previewStatus.setGravity(Gravity.CENTER);
+        previewStatus.setBackgroundColor(0xFF000000);
         previewFrame.addView(previewStatus, new FrameLayout.LayoutParams(-1, -1));
         previewLabel = Ui.text(this, Ui.semibold(), 13, Ui.TEXT);
         previewLabel.setBackground(Ui.rounded(0x99000000, px(8)));
@@ -796,10 +801,12 @@ public class HomeActivity extends Activity {
             if (tvView == null) {
                 tvView = new TvView(this);
                 tvView.setFocusable(false);
+                // Above the aerial video, which is also a video surface behind the window.
+                tvView.setZOrderMediaOverlay(true);
                 tvView.setCallback(new TvView.TvInputCallback() {
                     @Override public void onVideoAvailable(String inputId) {
                         main.removeCallbacks(previewTimeout);
-                        tvView.animate().alpha(1f).setDuration(250).start();
+                        previewStatus.animate().alpha(0f).setDuration(250).start();
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
@@ -819,17 +826,17 @@ public class HomeActivity extends Activity {
             previewFor = t.inputId;
             previewLabel.setText(t.label);
             previewStatus.setText("");
-            tvView.setAlpha(0f);
+            previewStatus.animate().cancel();
+            previewStatus.setAlpha(1f);
+            aerial.stop();
             sizePreview(16f / 9f);
             previewFrame.setVisibility(View.VISIBLE);
             previewFrame.setAlpha(0f);
-            previewFrame.setScaleX(0.96f);
-            previewFrame.setScaleY(0.96f);
-            previewFrame.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(Ui.EASE).start();
+            previewFrame.animate().alpha(1f).setDuration(300).setInterpolator(Ui.EASE).start();
             tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
             main.removeCallbacks(previewTimeout);
             previewTimeout = () -> {
-                if (tvView != null && tvView.getAlpha() == 0f) previewStatus.setText("No picture from " + t.label);
+                if (previewStatus.getAlpha() == 1f) previewStatus.setText("No picture from " + t.label);
             };
             main.postDelayed(previewTimeout, 5000);
         } catch (Exception e) {
@@ -868,6 +875,7 @@ public class HomeActivity extends Activity {
         }
         previewFrame.animate().cancel();
         previewFrame.setVisibility(View.GONE);
+        if (resumed && mode != Mode.DRAWER) aerial.resume();
     }
 
     // ---- all apps ----
