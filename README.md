@@ -37,7 +37,7 @@ Grab the APK from [Releases](https://github.com/xiaodoudou/simple-home-tv/releas
 [adb](https://developer.android.com/tools/adb) connected to the TV:
 
 ```sh
-adb install simple-home-tv-0.4.0.apk
+adb install simple-home-tv-0.4.1.apk
 adb shell cmd package set-home-activity com.simplehometv/.HomeActivity
 ```
 
