@@ -198,6 +198,9 @@ public class SettingsActivity extends Activity {
         boolean uhd = AerialBackground.use4k(this);
         rows.add(new Row("Aerial quality", "4K clips are about 330 MB each, Full HD about 230 MB",
                 uhd ? "4K" : "Full HD", () -> prefs.setAerial4k(!uhd)));
+        boolean inWindow = AerialBackground.inWindow(this);
+        rows.add(new Row("Aerial drawn on", "Pick \"The home\" if the aerial stays black",
+                inWindow ? "The home" : "TV video plane", () -> prefs.setAerialInWindow(!inWindow)));
         rows.add(new Row("Show app content on focus", "Continue watching and channels above the dock, with artwork",
                 onOff(prefs.spotlight()), () -> prefs.setSpotlight(!prefs.spotlight())));
         long mb = dirSize(new File(getCacheDir(), "aerial")) / (1024 * 1024);

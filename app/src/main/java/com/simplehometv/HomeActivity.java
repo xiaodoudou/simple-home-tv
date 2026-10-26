@@ -190,6 +190,10 @@ public class HomeActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        if (aerial.inWindow != AerialBackground.inWindow(this)) {
+            recreate();     // changed in Settings: the video view is chosen once, when the aerial is built
+            return;
+        }
         resumed = true;
         String keep = currentTileId();
         boolean onGear = mode == Mode.HOME && zone == Zone.GEAR;
@@ -879,7 +883,9 @@ public class HomeActivity extends Activity {
         if (tvView != null) return;
         tvView = new TvView(this);
         tvView.setFocusable(false);
-        tvView.setZOrderMediaOverlay(true);
+        // Where the aerial's plane stays hidden, so would the input's: put the input over the window instead.
+        if (aerial.inWindow) tvView.setZOrderOnTop(true);
+        else tvView.setZOrderMediaOverlay(true);
         tvView.setStreamVolume(0f);         // a picture only: the input's sound must not play on the home
         tvView.setCallback(new TvView.TvInputCallback() {
             @Override public void onVideoAvailable(String inputId) {

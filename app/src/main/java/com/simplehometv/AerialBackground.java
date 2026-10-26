@@ -7,9 +7,13 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
+import android.graphics.SurfaceTexture;
 import android.view.Display;
+import android.view.PixelCopy;
+import android.view.Surface;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
+import android.view.TextureView;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -32,9 +36,10 @@ import java.util.concurrent.Executors;
  * in list order or shuffled. Clips are downloaded once into the cache and played from there; the very first
  * one streams while it downloads. A dark gradient covers the video until a frame is ready.
  * A SurfaceView, not a TextureView: its frames go straight to the TV's video plane at the panel's full
- * resolution (4K), while the UI is drawn at 1080p.
+ * resolution (4K), while the UI is drawn at 1080p. Some TVs (Xiaomi) only show that plane while the window
+ * animates, so there the video is drawn in the window instead, through a TextureView.
  */
-public class AerialBackground extends FrameLayout implements SurfaceHolder.Callback {
+public class AerialBackground extends FrameLayout {
 
     private static final String TAG = "Aerial";
     private static final int KEEP = 3;                  // clips kept in the cache
@@ -47,7 +52,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private static AerialBackground playing;
     private static String lastId;                       // so the order carries on between home and screensaver
 
-    private final SurfaceView video;
+    private final View video;           // a SurfaceView, or a TextureView when inWindow
+    final boolean inWindow;
     private final View cover;
     private final android.widget.ImageView still;   // the frame the aerial was paused on, while an input shows
     private final android.widget.ImageView soft;    // a blurred copy of it, faded in over it
@@ -60,7 +66,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Random random = new Random();
     private MediaPlayer mp;
-    private SurfaceHolder holder;
+    private Surface surface;
     private boolean active = true;
     private boolean paused;             // stepped aside for an input's live picture
     private int retries;
@@ -73,8 +79,41 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         super(c);
         dir = new File(c.getCacheDir(), "aerial");
         prefs = new Prefs(c);
-        video = new SurfaceView(c);
-        video.getHolder().addCallback(this);
+        inWindow = inWindow(c);
+        if (inWindow) {
+            TextureView t = new TextureView(c);
+            t.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+                @Override public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
+                    surfaceReady(new Surface(st));
+                }
+
+                @Override public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) { }
+
+                @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
+                    Surface s = surface;
+                    surfaceGone();
+                    if (s != null) s.release();
+                    return true;
+                }
+
+                @Override public void onSurfaceTextureUpdated(SurfaceTexture st) { }
+            });
+            video = t;
+        } else {
+            SurfaceView s = new SurfaceView(c);
+            s.getHolder().addCallback(new SurfaceHolder.Callback() {
+                @Override public void surfaceCreated(SurfaceHolder h) {
+                    surfaceReady(h.getSurface());
+                }
+
+                @Override public void surfaceChanged(SurfaceHolder h, int format, int w, int height) { }
+
+                @Override public void surfaceDestroyed(SurfaceHolder h) {
+                    surfaceGone();
+                }
+            });
+            video = s;
+        }
         addView(video, full());
         still = new android.widget.ImageView(c);
         still.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
@@ -95,16 +134,30 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         addView(cover, full());
     }
 
-    @Override public void surfaceCreated(SurfaceHolder h) {
-        holder = h;
+    private void surfaceReady(Surface s) {
+        surface = s;
         if (!paused && !held) playNext();
     }
 
-    @Override public void surfaceChanged(SurfaceHolder h, int format, int w, int height) { }
-
-    @Override public void surfaceDestroyed(SurfaceHolder h) {
+    private void surfaceGone() {
         release();
-        holder = null;
+        surface = null;
+    }
+
+    /** Draw the video in the window: the user's choice, else on Xiaomi TVs, whose video plane stays hidden. */
+    static boolean inWindow(Context c) {
+        Boolean chosen = new Prefs(c).aerialInWindow();
+        return chosen != null ? chosen : "xiaomi".equalsIgnoreCase(android.os.Build.MANUFACTURER);
+    }
+
+    /** Copies the video's current frame into {@code frame}, then calls back with a PixelCopy result. */
+    private void copyFrame(android.graphics.Bitmap frame, java.util.function.IntConsumer result) {
+        if (video instanceof TextureView) {
+            ((TextureView) video).getBitmap(frame);
+            result.accept(PixelCopy.SUCCESS);
+        } else {
+            PixelCopy.request((SurfaceView) video, frame, result::accept, main);
+        }
     }
 
     public void stop() {
@@ -115,7 +168,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
 
     /** Resume after {@link #stop()} if the surface is still around. */
     public void resume() {
-        if (holder != null && mp == null && !paused && !held) playNext();
+        if (surface != null && mp == null && !paused && !held) playNext();
     }
 
     // ---- stepping aside for an input's live picture ----
@@ -140,7 +193,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
         frozen = true;
         paused = true;
-        if (mp == null || holder == null || getWidth() == 0) {
+        if (mp == null || surface == null || getWidth() == 0) {
             resumeAt = 0;
             cover.animate().cancel();
             cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();   // the gradient stands in
@@ -160,9 +213,9 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(),
                 android.graphics.Bitmap.Config.ARGB_8888);
         try {
-            android.view.PixelCopy.request(video, frame, result -> {
+            copyFrame(frame, result -> {
                 if (!frozen) return;
-                if (result != android.view.PixelCopy.SUCCESS) {
+                if (result != PixelCopy.SUCCESS) {
                     Log.w(TAG, "could not copy the aerial frame: " + result);
                     cover.animate().cancel();
                     cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();
@@ -178,7 +231,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 still.animate().alpha(1f).setDuration(STILL_MS).withEndAction(() -> {
                     if (frozen) animateBlur(1f, BLUR_MS, done);
                 }).start();
-            }, main);
+            });
         } catch (Exception e) {
             if (done != null) done.run();
         }
@@ -200,7 +253,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
         frozen = true;
         paused = true;
-        if (mp == null || holder == null || getWidth() == 0) {
+        if (mp == null || surface == null || getWidth() == 0) {
             cover.animate().cancel();
             cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();
             return;
@@ -216,9 +269,9 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(),
                     android.graphics.Bitmap.Config.ARGB_8888);
             try {
-                android.view.PixelCopy.request(video, frame, result -> {
+                copyFrame(frame, result -> {
                     if (!frozen) return;
-                    if (result != android.view.PixelCopy.SUCCESS) {
+                    if (result != PixelCopy.SUCCESS) {
                         cover.animate().cancel();
                         cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();
                         return;
@@ -227,7 +280,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                     setBlur(0f);
                     soft.setVisibility(VISIBLE);
                     animateBlur(1f, BLUR_MS, done);
-                }, main);
+                });
             } catch (Exception e) {
                 if (done != null) done.run();
             }
@@ -304,7 +357,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         paused = false;
         holdPaused = true;
         if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
-        else if (holder != null) playNext();
+        else if (surface != null) playNext();
     }
 
     /** Unblurs and undims back to the sharp frozen frame. */
@@ -427,6 +480,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     static boolean use4k(Context c) {
         Boolean chosen = new Prefs(c).aerial4k();
         if (chosen != null) return chosen;
+        if (inWindow(c)) return false;      // drawn with the UI, at 1080p
         try {
             Display d = ((android.hardware.display.DisplayManager) c.getSystemService(Context.DISPLAY_SERVICE))
                     .getDisplay(Display.DEFAULT_DISPLAY);
@@ -437,7 +491,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     }
 
     private void playNext() {
-        if (!active || paused || held || holder == null) return;
+        if (!active || paused || held || surface == null) return;
         if (source != null && resumeAt > 0) {
             play(source, sourceLocal);  // carry on with the clip that stepped aside
             return;
@@ -461,7 +515,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     }
 
     private void play(String source, boolean local) {
-        if (holder == null) return;
+        if (surface == null) return;
         release();
         this.source = source;
         sourceLocal = local;
@@ -469,7 +523,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         playing = this;
         try {
             mp = new MediaPlayer();
-            mp.setDisplay(holder);
+            if (video instanceof SurfaceView) mp.setDisplay(((SurfaceView) video).getHolder());
+            else mp.setSurface(surface);
             mp.setVolume(0f, 0f);
             mp.setDataSource(source);
             mp.setOnPreparedListener(p -> {
