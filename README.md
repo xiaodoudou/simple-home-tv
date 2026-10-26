@@ -81,6 +81,12 @@ its updates.
 [SmartTube](https://smarttubeapp.github.io) works without Google services, has no ads, and signs in with a code like
 the official app.
 
+### Debloating
+
+China-market TVs carry a second layer of apps on top of Android TV: their own home, stores, ads and analytics.
+[Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat) lists what I turn off on Sony and Xiaomi
+TVs with adb, and how to undo it.
+
 ### What still needs Google
 
 The official YouTube app, Google sign-in inside apps and Play-billed purchases need Google services, so they won't
