@@ -124,17 +124,28 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 android.graphics.Bitmap.Config.ARGB_8888);
         try {
             android.view.PixelCopy.request(video, frame, result -> {
-                if (result == android.view.PixelCopy.SUCCESS) {
-                    still.setImageBitmap(frame);
-                    still.setVisibility(VISIBLE);
-                } else {
+                if (result != android.view.PixelCopy.SUCCESS) {
                     Log.w(TAG, "could not copy the aerial frame: " + result);
+                    if (paused) leavePlane();
+                    return;
                 }
-                if (paused) leavePlane();
+                // Fade the frame in over the playing video, and let it go only once the frame is fully drawn.
+                still.animate().cancel();
+                still.setImageBitmap(frame);
+                still.setAlpha(0f);
+                still.setVisibility(VISIBLE);
+                still.animate().alpha(1f).setDuration(200).withEndAction(() -> afterNextFrame(() -> {
+                    if (paused) leavePlane();
+                })).start();
             }, main);
         } catch (Exception e) {
             leavePlane();
         }
+    }
+
+    /** Runs once the window has drawn the next frame, so what was just shown is really on screen. */
+    private void afterNextFrame(Runnable r) {
+        postOnAnimation(() -> postOnAnimation(() -> main.postDelayed(r, 34)));
     }
 
     private void leavePlane() {
@@ -228,8 +239,13 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
                     cover.animate().alpha(0f).setDuration(900).start();
                     if (still.getVisibility() == VISIBLE) {
-                        still.setVisibility(GONE);
-                        still.setImageBitmap(null);
+                        // The first decoded frame reaches the screen a little after this: fade once it is there.
+                        still.animate().cancel();
+                        still.animate().alpha(0f).setStartDelay(150).setDuration(300).withEndAction(() -> {
+                            still.setVisibility(GONE);
+                            still.setImageBitmap(null);
+                            still.animate().setStartDelay(0);
+                        }).start();
                     }
                     if (onShown != null) {
                         Runnable r = onShown;
