@@ -69,7 +69,11 @@ script again, with the same key so you stay signed in.
 
 ### Getting apps
 
-Settings > Apps lets you pick which store "Get" opens:
+No store on the TV yet? Settings > Apps can install Aurora, APKUpdater, SmartTube and Moonlight for you. It downloads
+them from F-Droid or from the project's latest GitHub release, in the build for the TV's processor. The first time,
+Android asks you to let Simple Home install apps, then it asks you to confirm each one.
+
+Once a store is in, the same page sets which one "Get" opens:
 
 - [Aurora Store](https://f-droid.org/packages/com.aurora.store) opens an app's Google Play page directly, without a
   Google account.
@@ -87,8 +91,32 @@ the official app.
 ### Debloating
 
 China-market TVs carry a second layer of apps on top of Android TV: their own home, stores, ads and analytics.
-[Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat) lists what I turn off on Sony and Xiaomi
-TVs with adb, and how to undo it.
+[scripts/debloat](scripts/debloat) holds what I turn off on my Sony and Xiaomi TVs, one list per brand split into
+groups, plus two scripts that apply a list over adb. Nothing gets uninstalled. Apps are only disabled, and `--undo`
+turns them back on.
+
+Connect to the TV first (`adb connect 192.168.1.20:5555`, then accept the prompt on the TV) and run the script from a
+clone of this repo.
+
+Linux, macOS or Git Bash:
+
+```sh
+scripts/debloat.sh xiaomi                  # disable everything in scripts/debloat/xiaomi.txt
+scripts/debloat.sh xiaomi --skip voice     # keep a group (several: --skip voice,screensavers)
+scripts/debloat.sh xiaomi --undo           # turn them all back on
+```
+
+Windows PowerShell:
+
+```powershell
+.\scripts\debloat.ps1 xiaomi
+.\scripts\debloat.ps1 xiaomi -Skip voice
+.\scripts\debloat.ps1 xiaomi -Undo
+```
+
+With several TVs connected, add `--serial 192.168.1.20:5555` (`-Serial` in PowerShell). The
+[Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat) page says what each group holds and what to
+leave alone.
 
 ### What still needs Google
 

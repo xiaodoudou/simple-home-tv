@@ -27,13 +27,13 @@ final class Suggestions {
             {PLAY, "Google Play"}, {AURORA, "Aurora Store"}, {APKUPDATER, "APKUpdater"}, {"com.apkupdater", "APKUpdater"}};
 
     static final class App {
-        final String pkg, name, why, site;   // site: where to get it when no store carries it
+        final String pkg, name, why, source;   // source: where Simple Home gets it itself (see Installer), or null
 
-        App(String pkg, String name, String why, String site) {
+        App(String pkg, String name, String why, String source) {
             this.pkg = pkg;
             this.name = name;
             this.why = why;
-            this.site = site;
+            this.source = source;
         }
     }
 
@@ -69,15 +69,15 @@ final class Suggestions {
             out.add(new App("com.netflix.ninja", "Netflix", "Official app", null));
             out.add(new App("com.amazon.amazonvideo.livingroom", "Prime Video", "Official app", null));
         } else {
-            out.add(new App(AURORA, "Aurora Store", "Opens an app's Google Play page from Get, no Google services", "f-droid.org/packages/com.aurora.store"));
-            out.add(new App(APKUPDATER, "APKUpdater", "Keeps apps updated, with a TV layout", "github.com/rumboalla/apkupdater"));
-            out.add(new App("org.smarttube.stable", "SmartTube", "YouTube without ads, no Google services needed", "smarttubeapp.github.io"));
+            out.add(new App(AURORA, "Aurora Store", "Opens an app's Google Play page from Get, no Google services", "fdroid:com.aurora.store"));
+            out.add(new App(APKUPDATER, "APKUpdater", "Keeps apps updated, with a TV layout", "github:rumboalla/apkupdater"));
+            out.add(new App("org.smarttube.stable", "SmartTube", "YouTube without ads, no Google services needed", "github:yuliskov/SmartTube"));
         }
         out.add(new App("com.plexapp.android", "Plex", "Your media server, movies and shows", null));
         out.add(new App("org.jellyfin.androidtv", "Jellyfin", "Free media server client", null));
         out.add(new App("org.xbmc.kodi", "Kodi", "Plays almost anything, local or network", null));
         out.add(new App("org.videolan.vlc", "VLC", "Simple player for files and streams", null));
-        out.add(new App("com.limelight", "Moonlight", "Streams games from your PC", "moonlight-stream.org"));
+        out.add(new App("com.limelight", "Moonlight", "Streams games from your PC", "github:moonlight-stream/moonlight-android"));
         return out;
     }
 

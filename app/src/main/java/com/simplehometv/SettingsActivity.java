@@ -76,12 +76,25 @@ public class SettingsActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        Installer.onChange(this::refresh);
         // Back from a system screen: values (network, installed apps) may have changed.
         if (rowBox != null) {
             int keep = rowFocus;
             showPage(page);
             if (inRows) focusRow(Math.min(keep, rows.size() - 1));
         }
+    }
+
+    @Override protected void onPause() {
+        super.onPause();
+        Installer.onChange(null);
+    }
+
+    /** Redraws the page in place, for values that change while it shows (an install's progress). */
+    private void refresh() {
+        int keep = rowFocus;
+        showPage(page);
+        if (inRows && !rows.isEmpty()) focusRow(Math.min(keep, rows.size() - 1));
     }
 
     private void buildUi() {
@@ -282,13 +295,16 @@ public class SettingsActivity extends Activity {
         for (Suggestions.App a : Suggestions.list(this)) {
             if (Suggestions.installed(this, a.pkg)) {
                 rows.add(new Row(a.name, a.why, "Installed", () -> launch(a.pkg)));
-            } else if (store != null && a.site == null) {
+            } else if (a.source != null) {
+                String now = Installer.state(a.pkg);
+                rows.add(new Row(a.name, now != null && now.startsWith("Allow") ? now : a.why,
+                        now == null ? "Install" : now.startsWith("Allow") ? "Install" : now,
+                        () -> Installer.install(this, a.pkg, a.source)));
+            } else if (store != null) {
                 // A store without market:// links (APKUpdater) can only open on its own search.
                 Intent page = Suggestions.pageIntent(this, store, a.pkg);
                 rows.add(new Row(a.name, page != null ? a.why : a.why + ". Search for it in " + Suggestions.storeName(store),
                         "Get", page != null ? () -> startSafe(page) : () -> launch(store)));
-            } else if (a.site != null) {
-                rows.add(new Row(a.name, a.why + ". Get it from " + a.site, null, null));
             } else {
                 rows.add(new Row(a.name, a.why, "Needs a store", null));
             }
