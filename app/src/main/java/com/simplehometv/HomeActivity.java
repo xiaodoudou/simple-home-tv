@@ -280,6 +280,7 @@ public class HomeActivity extends Activity {
 
         aerial = new AerialBackground(this);
         root.addView(aerial, full());
+        root.addView(previewFrame, full());     // a focused input's live picture replaces the aerial
 
         backShade = new View(this);
         backShade.setBackground(new LayerDrawable(new Drawable[]{
@@ -319,10 +320,7 @@ public class HomeActivity extends Activity {
         styleGear(false);
 
         previewFrame = new FrameLayout(this);
-        previewFrame.setBackground(Ui.rounded(0xFF000000, px(16)));
-        Ui.clip(previewFrame, px(16));
         previewFrame.setVisibility(View.GONE);
-        previewFrame.setElevation(px(12));
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
         previewStatus = Ui.text(this, Ui.medium(), 15, Ui.TEXT_DIM);
         previewStatus.setGravity(Gravity.CENTER);
@@ -334,8 +332,9 @@ public class HomeActivity extends Activity {
         FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         pl.leftMargin = px(14);
         pl.topMargin = px(14);
+        previewLabel.setVisibility(View.GONE);   // the focused tile already names the input
         previewFrame.addView(previewLabel, pl);
-        root.addView(previewFrame, new FrameLayout.LayoutParams(px(480), px(270)));
+
 
         hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
@@ -774,7 +773,6 @@ public class HomeActivity extends Activity {
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
                         Log.i(TAG, "preview size " + w + "x" + h);
                         if (w > 0 && h > 0) {
-                            sizePreview(w / (float) h);
                             main.removeCallbacks(previewTimeout);
                             previewStatus.animate().alpha(0f).setDuration(250).start();
                         }
@@ -797,8 +795,7 @@ public class HomeActivity extends Activity {
             previewStatus.setText("");
             previewStatus.animate().cancel();
             previewStatus.setAlpha(1f);
-            aerial.freeze();
-            sizePreview(16f / 9f);
+            aerial.pauseForInput();
             previewFrame.setVisibility(View.VISIBLE);
             previewFrame.setAlpha(0f);
             previewFrame.animate().alpha(1f).setDuration(300).setInterpolator(Ui.EASE).start();
@@ -813,23 +810,6 @@ public class HomeActivity extends Activity {
             Log.w(TAG, "preview failed: " + e);
             stopPreview();
         }
-    }
-
-    /** Fits the preview to the input's aspect ratio in the space between the clock and the dock. */
-    private void sizePreview(float ratio) {
-        int top = TOP + 84, bottom = BOTTOM + dockHeight() + 28;
-        int h = screenHdp - top - bottom;
-        int w = Math.round(h * ratio);
-        if (w > availW) {
-            w = availW;
-            h = Math.round(w / ratio);
-        }
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewFrame.getLayoutParams();
-        lp.width = px(w);
-        lp.height = px(h);
-        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-        lp.topMargin = px(top + (screenHdp - top - bottom - h) / 2);
-        previewFrame.setLayoutParams(lp);
     }
 
     /** The TV sometimes drops a preview it has just opened; try again while the tile is still focused. */
@@ -857,7 +837,7 @@ public class HomeActivity extends Activity {
         }
         previewFrame.animate().cancel();
         previewFrame.setVisibility(View.GONE);
-        aerial.unfreeze();
+        aerial.resumeAfterInput();
     }
 
     // ---- all apps ----
