@@ -46,13 +46,13 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
     private final TextureView video;
     private final View fallback;
     private final File dir;
-    private final ExecutorService io = Executors.newSingleThreadExecutor();
+    private static final ExecutorService io = Executors.newSingleThreadExecutor();   // shared: the home and the screensaver download into the same cache
     private final Handler main = new Handler(Looper.getMainLooper());
     private MediaPlayer mp;
     // TVs have one or two video decoders: the screensaver's player takes over from the home's.
     private static AerialBackground playing;
     private Surface surface;
-    private boolean downloading;
+    private static boolean downloading;
     private boolean active = true;
     private int retries;
 
