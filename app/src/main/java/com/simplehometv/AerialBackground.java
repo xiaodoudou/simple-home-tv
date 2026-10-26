@@ -62,6 +62,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private boolean sourceLocal;
     private int resumeAt;
     private Runnable onShown;
+    private Runnable afterPause;
 
     public AerialBackground(Context c) {
         super(c);
@@ -107,9 +108,13 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
      * Steps aside for an input's live picture, which needs the TV's video planes (an aerial plane is always drawn
      * over it). Remembers where the clip was.
      */
-    public void pauseForInput() {
-        if (paused) return;
+    public void pauseForInput(Runnable then) {
+        if (paused) {
+            if (then != null) then.run();
+            return;
+        }
         paused = true;
+        afterPause = then;
         try {
             if (mp != null) resumeAt = mp.getCurrentPosition();
         } catch (Exception e) {
@@ -119,6 +124,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             leavePlane();
             return;
         }
+        cover.animate().cancel();
         // The paused frame stays on screen as a picture drawn with the UI, under the input's live picture.
         android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(),
                 android.graphics.Bitmap.Config.ARGB_8888);
@@ -151,6 +157,9 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private void leavePlane() {
         release();
         video.setVisibility(GONE);      // frees the plane
+        Runnable then = afterPause;
+        afterPause = null;
+        if (then != null) then.run();
     }
 
     /** Carries on from where {@link #pauseForInput()} left off; {@code onShown} runs at its first frame. */
@@ -165,6 +174,18 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             return;
         }
         paused = false;
+        if (mp != null) {
+            // Left before the pause finished: the video never stopped, so just drop the still.
+            afterPause = null;
+            still.animate().cancel();
+            still.setVisibility(GONE);
+            if (this.onShown != null) {
+                Runnable r = this.onShown;
+                this.onShown = null;
+                r.run();
+            }
+            return;
+        }
         if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
         else if (holder != null) playNext();
     }
@@ -259,6 +280,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             mp.setOnErrorListener((p, w, e) -> {
                 Log.w(TAG, "can't play " + source + " (" + w + "/" + e + ")");
                 release();
+                if (paused) return true;        // an input took the decoder; the still frame stays
                 cover.setAlpha(1f);
                 boolean broken = e == MediaPlayer.MEDIA_ERROR_MALFORMED || e == MediaPlayer.MEDIA_ERROR_UNSUPPORTED;
                 if (local && broken) {

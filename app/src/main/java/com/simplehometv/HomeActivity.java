@@ -767,14 +767,10 @@ public class HomeActivity extends Activity {
                 tvView.setCallback(new TvView.TvInputCallback() {
                     @Override public void onVideoAvailable(String inputId) {
                         Log.i(TAG, "preview video available");
-                        showInput();
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
-                        if (w > 0 && h > 0) {
-                            sizePreview(w / (float) h);
-                            showInput();
-                        }
+                        if (w > 0 && h > 0) sizePreview(w / (float) h);
                     }
 
                     @Override public void onConnectionFailed(String inputId) {
@@ -799,8 +795,14 @@ public class HomeActivity extends Activity {
             previewFrame.setAlpha(1f);
             sizePreview(16f / 9f);
             previewFrame.setVisibility(View.VISIBLE);
-            Log.i(TAG, "preview tune " + t.inputId);
-            tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
+            // The TV takes the video decoder from a playing aerial when an input starts, so the aerial pauses
+            // on a still frame first and the input is tuned once it has stepped aside.
+            String inputId = t.inputId;
+            aerial.pauseForInput(() -> {
+                if (!inputId.equals(previewFor) || tvView == null) return;
+                Log.i(TAG, "preview tune " + inputId);
+                tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
+            });
         } catch (Exception e) {
             Log.w(TAG, "preview failed: " + e);
             stopPreview();
@@ -835,9 +837,6 @@ public class HomeActivity extends Activity {
         previewFrame.setLayoutParams(lp);
     }
 
-    private void showInput() {
-        if (previewFor != null) aerial.pauseForInput();
-    }
 
     /**
      * Ends the input picture. The aerial comes back first, over it; the input closes once the aerial has a frame
