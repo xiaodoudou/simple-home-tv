@@ -102,7 +102,6 @@ public class HomeActivity extends Activity {
     private int gridCols, gridW, gridH, contentW, contentH;
 
     private Mode mode = Mode.HOME;
-    private boolean resumed;
     private Zone zone = Zone.DOCK;
     private int dockFocus, contentFocus, drawerFocus;
     private String spotFor;                     // tile id whose content is on screen
@@ -178,7 +177,6 @@ public class HomeActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
-        resumed = true;
         String keep = currentTileId();
         boolean onGear = mode == Mode.HOME && zone == Zone.GEAR;
         pins = new Pins(prefs.pins());
@@ -203,7 +201,6 @@ public class HomeActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
-        resumed = false;
         main.removeCallbacks(tick);
         main.removeCallbacks(holdTimer);
         okKey.reset();
@@ -828,7 +825,6 @@ public class HomeActivity extends Activity {
             previewStatus.setText("");
             previewStatus.animate().cancel();
             previewStatus.setAlpha(1f);
-            aerial.stop();
             sizePreview(16f / 9f);
             previewFrame.setVisibility(View.VISIBLE);
             previewFrame.setAlpha(0f);
@@ -875,7 +871,6 @@ public class HomeActivity extends Activity {
         }
         previewFrame.animate().cancel();
         previewFrame.setVisibility(View.GONE);
-        if (resumed && mode != Mode.DRAWER) aerial.resume();
     }
 
     // ---- all apps ----
