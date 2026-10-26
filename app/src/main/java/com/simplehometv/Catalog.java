@@ -22,6 +22,9 @@ final class Catalog {
     /** Launcher entries that only open a background service's own settings, not an app. */
     private static final Set<String> HIDDEN = new HashSet<>(Arrays.asList("com.google.android.tv.remote.service"));
 
+    /** The TV's settings apps, reached from Settings instead of All apps: the vendor's own first. */
+    static final List<String> SETTINGS = Arrays.asList("com.xiaomi.mitv.settings", "com.android.tv.settings", "com.android.settings");
+
     private Catalog() { }
 
     /** Every launchable app (leanback entry preferred), A to Z, minus this launcher itself. */
@@ -33,7 +36,7 @@ final class Catalog {
             Intent q = new Intent(Intent.ACTION_MAIN).addCategory(cat);
             for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
                 String pkg = ri.activityInfo.packageName;
-                if (pkg.equals(c.getPackageName()) || HIDDEN.contains(pkg) || byPkg.containsKey(pkg)) continue;
+                if (pkg.equals(c.getPackageName()) || HIDDEN.contains(pkg) || SETTINGS.contains(pkg) || byPkg.containsKey(pkg)) continue;
                 Intent launch = launchIntent(pm, pkg);
                 if (launch == null) continue;
                 byPkg.put(pkg, Tile.app(pkg, String.valueOf(ri.loadLabel(pm)).trim(), launch));
@@ -42,6 +45,19 @@ final class Catalog {
         List<Tile> out = new ArrayList<>(byPkg.values());
         out.sort((a, b) -> a.label.compareToIgnoreCase(b.label));
         return out;
+    }
+
+    /** The vendor's settings app (Xiaomi's), when the TV has one with its own entry, else null. */
+    static Tile vendorSettings(Context c) {
+        PackageManager pm = c.getPackageManager();
+        String pkg = SETTINGS.get(0);
+        Intent launch = launchIntent(pm, pkg);
+        if (launch == null) return null;
+        try {
+            return Tile.app(pkg, String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0))).trim(), launch);
+        } catch (PackageManager.NameNotFoundException e) {
+            return null;
+        }
     }
 
     private static Intent launchIntent(PackageManager pm, String pkg) {

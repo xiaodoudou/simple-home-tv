@@ -1,0 +1,52 @@
+# Xiaomi Mi TV, China firmware. Tried on a MiTV-MFFU0 (Android 14, HyperOS TV).
+# Never disable PatchWall (com.mitv.tvhome): this firmware only accepts a system app as home, and without it Home
+# lands on a fallback screen that keeps restarting. Keep the settings (com.xiaomi.mitv.settings, com.xiaomi.tvqs),
+# the input player (com.xiaomi.mitv.tvplayer), mitv.service and com.mediatek.*, the Sogou keyboard, the updater
+# (com.xiaomi.mitv.upgrade), the Xiaomi account, casting (com.xiaomi.miplay, com.xiaomi.mitv.smartshare) and the
+# USB player (com.xiaomi.mitv.mediaexplorer).
+
+[ads]
+# Video Daily, analytics, MiSight, the push service and cloud control (remote config).
+com.duokan.videodaily
+com.miui.tv.analytics
+com.miui.misightservice
+com.xiaomi.mitv.tvpush.tvpushservice
+com.mitv.cloudcontrol
+
+[apps]
+# Shop, calendar, health, karaoke, weather, translation, web content, Mi Home, quick apps, screen recorder,
+# toolbox, game center service, gallery, and the preinstalled iQIYI (Gitv) and QQ Music.
+com.xiaomi.mitv.shop
+com.mitv.shoplugin
+com.xiaomi.mitv.calendar
+com.xiaomi.mitv.health
+com.xiaomi.mitv.karaoke.service
+com.xiaomi.tweather
+com.xiaomi.aitranslate
+com.xm.webcontent
+com.xiaomi.smarthome.tv
+com.miui.hybrid.tv
+com.xiaomi.screenrecorder
+com.mitv.toolhouse
+com.xiaomi.gamecenter.sdk.service.mibox
+com.xiaomi.tv.gallery
+com.gitvdemo.video
+com.tencent.qqmusictv
+
+[system-extras]
+# TV manager (cleaner), health diagnosis, the phone link services and the Xiaomi app store.
+com.xiaomi.mitv.tvmanager
+com.xiaomi.mitv.healthdiagnosis
+com.xiaomi.hyper_connect.tv
+com.xiaomi.mi_connect_service
+com.xiaomi.mitv.appstore
+
+[screensavers]
+# Xiaomi's screensavers. Pick another one first (Simple Home's, for one).
+com.xiaomi.mitv.aod.screensaver
+com.xiaomi.mitv.hyper.screensaver
+
+[voice]
+# The XiaoAI assistant and its wake word.
+com.xiaomi.voicecontrol
+com.xiaomi.wakeupservice

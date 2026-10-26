@@ -327,6 +327,13 @@ public class SettingsActivity extends Activity {
     }
 
     private void androidRows() {
+        Tile vendor = Catalog.vendorSettings(this);
+        if (vendor != null) {
+            String maker = Build.MANUFACTURER.isEmpty() ? vendor.label
+                    : Build.MANUFACTURER.substring(0, 1).toUpperCase(java.util.Locale.ROOT) + Build.MANUFACTURER.substring(1) + " settings";
+            rows.add(new Row("Open " + maker, "The TV maker's settings: picture, sound, inputs and more", null,
+                    () -> startSafe(vendor.launch)));
+        }
         rows.add(new Row("Open Android settings", "The TV's own settings: picture, sound, network, accounts and more",
                 null, this::openAndroidSettings));
     }
