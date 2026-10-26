@@ -195,6 +195,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        HomeButton.homeResumed();
         if (aerial.inWindow != AerialBackground.inWindow(this)) {
             recreate();     // changed in Settings: the video view is chosen once, when the aerial is built
             return;
@@ -235,6 +236,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
+        HomeButton.homePaused();
         resumed = false;
         main.removeCallbacks(tick);
         main.removeCallbacks(holdTimer);

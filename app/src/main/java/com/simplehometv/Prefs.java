@@ -55,6 +55,10 @@ final class Prefs {
     Boolean aerial4k() { return p.contains("aerial_4k") ? p.getBoolean("aerial_4k", false) : null; }
     void setAerial4k(boolean on) { p.edit().putBoolean("aerial_4k", on).apply(); }
 
+    /** The Home button service was on when last seen; a force-stop doesn't count as switching it off. */
+    boolean homeButton() { return p.getBoolean("home_button", false); }
+    void setHomeButton(boolean on) { p.edit().putBoolean("home_button", on).apply(); }
+
     /** Null until chosen: the default then follows the TV (see {@link AerialBackground#inWindow}). */
     Boolean aerialInWindow() { return p.contains("aerial_window") ? p.getBoolean("aerial_window", false) : null; }
     void setAerialInWindow(boolean on) { p.edit().putBoolean("aerial_window", on).apply(); }

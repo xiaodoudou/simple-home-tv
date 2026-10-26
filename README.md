@@ -44,7 +44,9 @@ adb shell cmd package set-home-activity com.simplehometv/.HomeActivity
 Press Home on the remote and you are there. If the TV asks which home app to use, pick Simple Home.
 
 Some firmwares (Xiaomi's Chinese one) only let their own home be the home. There, turn on "Simple Home: Home
-button" in the TV's Accessibility settings and the Home button opens Simple Home anyway.
+button" in the TV's Accessibility settings and the Home button opens Simple Home anyway. On Xiaomi also run the two
+grants on [Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat), or the firmware switches it off
+again at standby.
 
 It needs Android TV 7 or later. The rows of what's on need Android 8, since that's when apps got a way to publish
 them.
@@ -143,6 +145,8 @@ No ads, no analytics, no account and no server of its own. What it talks to, and
 
 - Aerial videos by Apple, streamed from Apple's servers; they are not part of this repo.
 - [Outfit](https://fonts.google.com/specimen/Outfit) font, SIL Open Font License 1.1.
+- How the Home button service stays on and answers Home on Xiaomi follows
+  [aerial-tv](https://github.com/pengchujin/aerial-tv)'s Home Guard (MIT).
 
 ## License
 
