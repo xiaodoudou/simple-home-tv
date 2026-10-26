@@ -19,6 +19,14 @@ final class Prefs {
     String pins() { return p.getString("pins", null); }
     void setPins(String csv) { p.edit().putString("pins", csv).apply(); }
 
+    /** All apps' order once something was moved there, as ids; null until then, which means A to Z. */
+    String gridOrder() { return p.getString("grid_order", null); }
+    void setGridOrder(String csv) { p.edit().putString("grid_order", csv).apply(); }
+
+    /** The app store package picked in Settings, or null to use the first one installed. */
+    String store() { return p.getString("store", null); }
+    void setStore(String pkg) { p.edit().putString("store", pkg).apply(); }
+
     /** {@link DockLayout#AUTO}, 1 or 2. */
     int dockRows() { return p.getInt("dock_rows", DockLayout.AUTO); }
     void setDockRows(int rows) { p.edit().putInt("dock_rows", rows).apply(); }

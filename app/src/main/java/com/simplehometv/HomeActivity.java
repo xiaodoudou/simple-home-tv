@@ -70,6 +70,7 @@ public class HomeActivity extends Activity {
     private int screenWdp, screenHdp, availW;
     private Prefs prefs;
     private Pins pins;
+    private Pins gridOrder;                 // All apps' order, kept like the pins as an ordered id list
 
     private FrameLayout root;
     private AerialBackground aerial;
@@ -179,6 +180,7 @@ public class HomeActivity extends Activity {
         availW = screenWdp - 2 * GUTTER;
         prefs = new Prefs(this);
         pins = new Pins(prefs.pins());
+        gridOrder = new Pins(prefs.gridOrder());
         buildUi();
         load();
         renderDock();
@@ -192,9 +194,11 @@ public class HomeActivity extends Activity {
         String keep = currentTileId();
         boolean onGear = mode == Mode.HOME && zone == Zone.GEAR;
         pins = new Pins(prefs.pins());
+        gridOrder = new Pins(prefs.gridOrder());
         load();
         prefetchArt();
         if (mode == Mode.MENU) closeMenu();
+        if (mode == Mode.MOVE && moveInGrid) mode = Mode.DRAWER;
         if (mode == Mode.DRAWER) resetDrawer();
         mode = Mode.HOME;
         movingId = null;
@@ -402,7 +406,7 @@ public class HomeActivity extends Activity {
         dt.setText(R.string.all_apps);
         drawerHeader.addView(dt, new LinearLayout.LayoutParams(0, -2, 1));
         TextView hint = Ui.text(this, Ui.regular(), 14, Ui.TEXT_FAINT);
-        hint.setText("Hold OK to add to your home or hide");
+        hint.setText("Hold OK to move, hide or add to your home");
         drawerHeader.addView(hint);
         FrameLayout.LayoutParams hdl = new FrameLayout.LayoutParams(-1, px(HEADER - 12), Gravity.TOP);
         hdl.leftMargin = px(GUTTER);
@@ -1172,6 +1176,7 @@ public class HomeActivity extends Activity {
         }
         dockScroll.animate().cancel();
         dockScroll.setTranslationY(0);
+        dockScroll.setAlpha(1f);
     }
 
     private void renderGrid() {
@@ -1179,7 +1184,9 @@ public class HomeActivity extends Activity {
         gridTiles.clear();
         gridViews.clear();
         gridRows.clear();
-        for (Tile t : catalog) if (!pins.isPinned(t.id)) gridTiles.add(t);
+        List<Tile> rest = new ArrayList<>();
+        for (Tile t : catalog) if (!pins.isPinned(t.id)) rest.add(t);
+        gridTiles.addAll(gridOrder.order(rest, t -> t.id));
         if (layout.rows == 1 && layout.cols >= 5) {
             gridCols = layout.cols;
             gridW = layout.tileW;
@@ -1230,18 +1237,18 @@ public class HomeActivity extends Activity {
         drawerFocus = Math.max(0, Math.min(i, bar + gridTiles.size() - 1));
         for (int k = 0; k < dockViews.size(); k++) setFocused(dockViews.get(k), k == drawerFocus, true);
         for (int k = 0; k < gridViews.size(); k++) setFocused(gridViews.get(k), k + bar == drawerFocus, true);
-        if (drawerFocus < bar) {
-            scrollIntoView(dockScroll, dockViews.get(drawerFocus));
-        } else {
-            View v = gridViews.get(drawerFocus - bar);
-            View row = (View) v.getParent();
-            drawerScroll.post(() -> {
-                int y = row.getTop() - px(VPAD), h = drawerScroll.getHeight() - px(48);
-                int cur = drawerScroll.getScrollY();
-                if (y < cur) drawerScroll.smoothScrollTo(0, y);
-                else if (y + row.getHeight() > cur + h) drawerScroll.smoothScrollTo(0, y + row.getHeight() - h);
-            });
-        }
+        if (drawerFocus < bar) scrollIntoView(dockScroll, dockViews.get(drawerFocus));
+        else scrollDrawerTo(gridViews.get(drawerFocus - bar));
+    }
+
+    private void scrollDrawerTo(View tile) {
+        View row = (View) tile.getParent();
+        drawerScroll.post(() -> {
+            int y = row.getTop() - px(VPAD), h = drawerScroll.getHeight() - px(48);
+            int cur = drawerScroll.getScrollY();
+            if (y < cur) drawerScroll.smoothScrollTo(0, y);
+            else if (y + row.getHeight() > cur + h) drawerScroll.smoothScrollTo(0, y + row.getHeight() - h);
+        });
     }
 
     private Tile drawerTile(int i) {
@@ -1300,8 +1307,9 @@ public class HomeActivity extends Activity {
             return;
         }
         if (mode == Mode.MOVE) {
+            int cols = moveInGrid ? gridCols : layout.rows > 1 ? layout.cols : 0;
             if (dx != 0) moveBy(dx);
-            else if (layout.rows > 1) moveBy(dy * layout.cols);
+            else if (cols > 0) moveBy(dy * cols);
             return;
         }
         if (mode == Mode.DRAWER) {
@@ -1413,7 +1421,9 @@ public class HomeActivity extends Activity {
         });
         MenuItem hide = new MenuItem("Hide", null, false, false, () -> hideTile(t));
         if (!pinned) items.add(toggle);
-        if (pinned && dockTiles.size() > 2) items.add(new MenuItem("Move", null, false, false, () -> startMove(t)));
+        if (pinned ? dockTiles.size() > 2 : gridTiles.size() > 1) {
+            items.add(new MenuItem("Move", null, false, false, () -> startMove(t)));
+        }
         if (t.kind == Tile.Kind.APP) {
             List<Content.Source> known = sourcesByPkg.get(t.pkg);
             if (known != null && !known.isEmpty()) {
@@ -1593,53 +1603,92 @@ public class HomeActivity extends Activity {
 
     // ---- moving a tile ----
     //
-    // Move picks the tile up: it follows left and right (and up and down on two rows) until OK or Back puts it
-    // down. Each step re-renders the dock, then every tile glides from where it was drawn to its new place.
+    // Move picks the tile up: it follows left and right (and up and down over several rows) until OK or Back puts
+    // it down. It works on the dock and on All apps. Each step re-renders, then every tile glides from where it was
+    // drawn to its new place.
 
     private static final float MOVE_DIM = 0.4f;
 
+    private boolean moveInGrid;             // moving within All apps rather than the dock
+
+    private List<Tile> moveTiles() {
+        return moveInGrid ? gridTiles : dockTiles;
+    }
+
+    private List<View> moveViews() {
+        return moveInGrid ? gridViews : dockViews;
+    }
+
+    /** The last place a moving tile can take: on the dock, All apps stays last. */
+    private int moveLast() {
+        return moveInGrid ? gridTiles.size() - 1 : dockTiles.size() - 2;
+    }
+
     private void startMove(Tile t) {
-        int at = indexOf(dockTiles, t.id);
-        if (at < 0) return;
+        moveInGrid = mode == Mode.DRAWER;
+        if (indexOf(moveTiles(), t.id) < 0) return;
+        if (moveInGrid) {
+            // All apps runs A to Z until the first move, then keeps the order shown; new apps go at the end.
+            Pins order = new Pins(null);
+            for (Tile g : gridTiles) order.pin(g.id);
+            for (String id : gridOrder.ids()) order.pin(id);
+            gridOrder = order;
+            prefs.setGridOrder(order.serialize());
+            dockScroll.animate().alpha(MOVE_DIM).setDuration(200).start();
+        } else {
+            main.removeCallbacks(pendingSpot);
+            main.removeCallbacks(pendingPreview);
+            stopPreview();
+            spotToken++;
+            spotFor = null;
+            fadeOutSpot();
+            dockFocus = indexOf(dockTiles, t.id);
+        }
         mode = Mode.MOVE;
         movingId = t.id;
-        main.removeCallbacks(pendingSpot);
-        main.removeCallbacks(pendingPreview);
-        stopPreview();
-        spotToken++;
-        spotFor = null;
-        fadeOutSpot();
-        dockFocus = at;
-        for (int k = 0; k < dockViews.size(); k++) {
-            setFocused(dockViews.get(k), k == at, true);
-            dockViews.get(k).animate().alpha(k == at ? 1f : MOVE_DIM).setDuration(200).start();
-        }
-        addArrows(true);
+        markMoving(true);
     }
 
     private void moveBy(int steps) {
-        int from = indexOf(dockTiles, movingId);
-        int to = Math.max(0, Math.min(dockTiles.size() - 2, from + steps));     // All apps stays last
+        List<Tile> tiles = moveTiles();
+        int from = indexOf(tiles, movingId);
+        int to = Math.max(0, Math.min(moveLast(), from + steps));
         if (from < 0 || to == from) return;
         if (glideFrom == null) {
-            glideFrom = positions(dockViews, dockTiles);
-            dockBox.getViewTreeObserver().addOnPreDrawListener(glide);
+            glideFrom = positions(moveViews(), tiles);
+            root.getViewTreeObserver().addOnPreDrawListener(glide);
         }
         int step = to > from ? 1 : -1;
-        for (int i = from; i != to; i += step) pins.move(movingId, step, this::present);
-        savePins();
-        renderDock();
-        dockFocus = indexOf(dockTiles, movingId);
-        for (int k = 0; k < dockViews.size(); k++) {
-            setFocused(dockViews.get(k), k == dockFocus, true);
-            dockViews.get(k).setAlpha(k == dockFocus ? 1f : MOVE_DIM);
+        if (moveInGrid) {
+            for (int i = from; i != to; i += step) gridOrder.move(movingId, step, id -> indexOf(gridTiles, id) >= 0);
+            prefs.setGridOrder(gridOrder.serialize());
+            renderGrid();
+            drawerFocus = dockTiles.size() + indexOf(gridTiles, movingId);
+        } else {
+            for (int i = from; i != to; i += step) pins.move(movingId, step, this::present);
+            savePins();
+            renderDock();
+            dockFocus = indexOf(dockTiles, movingId);
+            scrollIntoView(dockScroll, dockViews.get(dockFocus));
         }
-        addArrows(false);
-        scrollIntoView(dockScroll, dockViews.get(dockFocus));
+        markMoving(false);
+    }
+
+    /** Dims every other tile and puts arrows on the moving one. */
+    private void markMoving(boolean fade) {
+        List<View> views = moveViews();
+        int at = indexOf(moveTiles(), movingId);
+        for (int k = 0; k < views.size(); k++) {
+            setFocused(views.get(k), k == at, true);
+            float a = k == at ? 1f : MOVE_DIM;
+            if (fade) views.get(k).animate().alpha(a).setDuration(200).start();
+            else views.get(k).setAlpha(a);
+        }
+        addArrows(fade);
     }
 
     private void endMove() {
-        mode = Mode.HOME;
+        mode = moveInGrid ? Mode.DRAWER : Mode.HOME;
         movingId = null;
         for (View a : moveArrows) {
             a.animate().alpha(0f).setDuration(160).withEndAction(() -> {
@@ -1647,8 +1696,13 @@ public class HomeActivity extends Activity {
             }).start();
         }
         moveArrows.clear();
-        for (View v : dockViews) v.animate().alpha(1f).setDuration(200).start();
-        focusDock(dockFocus);
+        for (View v : moveViews()) v.animate().alpha(1f).setDuration(200).start();
+        if (moveInGrid) {
+            dockScroll.animate().alpha(1f).setDuration(200).start();
+            focusDrawer(drawerFocus);
+        } else {
+            focusDock(dockFocus);
+        }
     }
 
     /** Where each tile in a row-of-rows box is drawn now, by id, counting any glide still under way. */
@@ -1676,10 +1730,12 @@ public class HomeActivity extends Activity {
 
     private final ViewTreeObserver.OnPreDrawListener glide = new ViewTreeObserver.OnPreDrawListener() {
         @Override public boolean onPreDraw() {
-            dockBox.getViewTreeObserver().removeOnPreDrawListener(this);
+            root.getViewTreeObserver().removeOnPreDrawListener(this);
             Map<String, float[]> from = glideFrom;
             glideFrom = null;
-            if (from != null) slideFrom(from, dockViews, dockTiles);
+            if (from != null) slideFrom(from, moveViews(), moveTiles());
+            int g = drawerFocus - dockTiles.size();
+            if (mode == Mode.MOVE && moveInGrid && g >= 0 && g < gridViews.size()) scrollDrawerTo(gridViews.get(g));
             return true;
         }
     };
@@ -1713,8 +1769,9 @@ public class HomeActivity extends Activity {
     /** Chevrons on the moving tile, on the sides it can still go. */
     private void addArrows(boolean fadeIn) {
         moveArrows.clear();
-        FrameLayout tile = (FrameLayout) dockViews.get(dockFocus);
-        int size = layout.tileH < 60 ? 18 : 22;
+        int at = indexOf(moveTiles(), movingId);
+        FrameLayout tile = (FrameLayout) moveViews().get(at);
+        int size = (moveInGrid ? gridH : layout.tileH) < 60 ? 18 : 22;
         for (int side = -1; side <= 1; side += 2) {
             ImageView a = new ImageView(this);
             a.setImageResource(R.drawable.ic_chevron);
@@ -1722,7 +1779,7 @@ public class HomeActivity extends Activity {
             a.setBackground(Ui.circle(0xF2FFFFFF));
             a.setPadding(px(3), px(3), px(3), px(3));
             a.setRotation(side < 0 ? 180f : 0f);
-            boolean can = side < 0 ? dockFocus > 0 : dockFocus < dockTiles.size() - 2;
+            boolean can = side < 0 ? at > 0 : at < moveLast();
             a.setVisibility(can ? View.VISIBLE : View.INVISIBLE);
             FrameLayout.LayoutParams l = new FrameLayout.LayoutParams(px(size), px(size),
                     Gravity.CENTER_VERTICAL | (side < 0 ? Gravity.START : Gravity.END));
