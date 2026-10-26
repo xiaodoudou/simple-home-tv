@@ -38,6 +38,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private static final String TAG = "Aerial";
     private static final int KEEP = 3;                  // clips kept in the cache
     private static final long MIN_FREE = 2L << 30;      // leave the device at least 2 GB
+    private static final int MIN_CLIP = 1 << 20;         // anything smaller is an error page, not a video
 
     // Shared: the home and the screensaver use the same cache, and TVs have few video decoders.
     private static final ExecutorService io = Executors.newSingleThreadExecutor();
@@ -119,15 +120,16 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         List<Aerials.Clip> chosen = Aerials.chosen(getContext(), prefs.aerialIds());
         if (chosen.isEmpty()) return;
         List<String> ready = new ArrayList<>();
-        for (Aerials.Clip clip : chosen) if (fileFor(clip, uhd).length() > 0) ready.add(clip.id);
+        for (Aerials.Clip clip : chosen) if (fileFor(clip, uhd).length() >= MIN_CLIP) ready.add(clip.id);
         String id = Aerials.next(ready, lastId, prefs.aerialShuffle(), random);
         if (id != null) {
             lastId = id;
             play(fileFor(byId(chosen, id), uhd).getPath(), true);
         } else {
+            // Streams the Full HD file even for 4K: the media server ignores this app's trust of Apple's root.
             Aerials.Clip first = chosen.get(prefs.aerialShuffle() ? random.nextInt(chosen.size()) : 0);
             lastId = first.id;
-            play(uhd ? first.url4k : first.url, false);
+            play(first.url, false);
         }
         fetchMore(chosen, uhd, ready.size());
     }
@@ -190,7 +192,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 for (int k = 0; k < chosen.size() && have < KEEP; k++) {
                     Aerials.Clip clip = chosen.get((start + 1 + k) % chosen.size());
                     File f = fileFor(clip, uhd);
-                    if (f.length() > 0) continue;
+                    if (f.length() >= MIN_CLIP) continue;
                     if (dir.getUsableSpace() < MIN_FREE) break;
                     if (download(uhd ? clip.url4k : clip.url, f)) have++;
                 }
@@ -208,12 +210,15 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             con = (HttpURLConnection) new URL(url).openConnection();
             con.setConnectTimeout(10_000);
             con.setReadTimeout(30_000);
+            if (con.getResponseCode() != 200 || con.getContentLength() < MIN_CLIP) {
+                throw new java.io.IOException("HTTP " + con.getResponseCode() + ", " + con.getContentLength() + " bytes");
+            }
             try (InputStream in = con.getInputStream(); OutputStream out = new FileOutputStream(part)) {
                 byte[] buf = new byte[64 * 1024];
                 int n;
                 while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
             }
-            boolean ok = part.renameTo(to);
+            boolean ok = part.length() >= MIN_CLIP && part.renameTo(to);
             Log.i(TAG, "downloaded " + to.getName() + " " + (to.length() / (1024 * 1024)) + " MB");
             return ok;
         } catch (Exception e) {
@@ -233,8 +238,9 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         File[] files = dir.listFiles();
         if (files == null) return;
         for (File f : files) {
-            boolean partial = f.getName().endsWith(".part") && !downloading;
-            if (partial || (!f.getName().endsWith(".part") && !keep.contains(f.getName()))) {
+            boolean partial = f.getName().endsWith(".part");
+            boolean stale = !partial && (!keep.contains(f.getName()) || f.length() < MIN_CLIP);
+            if (stale || (partial && !downloading)) {
                 //noinspection ResultOfMethodCallIgnored
                 f.delete();
             }

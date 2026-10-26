@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Apple's aerial host chains to a root many TV trust stores lack, and app artwork is often plain http. -->
+<!-- App artwork is often plain http. Apple's aerial host chains to Apple Root CA, which TV trust stores lack. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="true" />
+    <domain-config>
+        <domain includeSubdomains="false">sylvan.apple.com</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/apple_root_ca" />
+        </trust-anchors>
+    </domain-config>
 </network-security-config>
