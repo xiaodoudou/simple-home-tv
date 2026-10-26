@@ -16,7 +16,7 @@ while [ $# -gt 0 ]; do
     shift
 done
 group=""
-grep -v '^[[:space:]]*\(#\|$\)' "$list" | tr -d '\r' | while read -r line; do
+grep -Ev '^[[:space:]]*(#|$)' "$list" | tr -d '\r' | while read -r line; do
     case "$line" in
         \[*\]) group=$(echo "$line" | tr -d '[]'); continue ;;
     esac
