@@ -784,8 +784,14 @@ public class HomeActivity extends Activity {
 
     // ---- input preview ----
 
+    /**
+     * Shows the input's live picture. Only for a device that is on: the TV closes a preview of an input in standby
+     * after a moment, and a box that opens and closes again just reads as a glitch.
+     */
     private void startPreview(Tile t) {
         if (mode != Mode.HOME || zone != Zone.DOCK) return;
+        android.media.tv.TvInputManager tim = (android.media.tv.TvInputManager) getSystemService(TV_INPUT_SERVICE);
+        if (tim == null || Catalog.state(tim, t.inputId) != android.media.tv.TvInputManager.INPUT_STATE_CONNECTED) return;
         try {
             if (tvView == null) {
                 tvView = new TvView(this);
@@ -793,14 +799,7 @@ public class HomeActivity extends Activity {
                 tvView.setCallback(new TvView.TvInputCallback() {
                     @Override public void onVideoAvailable(String inputId) {
                         main.removeCallbacks(previewTimeout);
-                        previewStatus.setText("");
                         tvView.animate().alpha(1f).setDuration(250).start();
-                    }
-
-                    @Override public void onVideoUnavailable(String inputId, int reason) {
-                        tvView.setAlpha(0f);
-                        previewStatus.setText(reason == android.media.tv.TvInputManager.VIDEO_UNAVAILABLE_REASON_TUNING
-                                ? "Connecting…" : "No signal");
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
@@ -808,18 +807,18 @@ public class HomeActivity extends Activity {
                     }
 
                     @Override public void onConnectionFailed(String inputId) {
-                        previewStatus.setText("Preview not available");
+                        stopPreview();
                     }
 
                     @Override public void onDisconnected(String inputId) {
-                        previewStatus.setText("Preview not available");
+                        stopPreview();
                     }
                 });
                 previewFrame.addView(tvView, 0, full());
             }
             previewFor = t.inputId;
             previewLabel.setText(t.label);
-            previewStatus.setText(t.connected ? "Connecting…" : "Nothing connected");
+            previewStatus.setText("");
             tvView.setAlpha(0f);
             sizePreview(16f / 9f);
             previewFrame.setVisibility(View.VISIBLE);
@@ -827,15 +826,15 @@ public class HomeActivity extends Activity {
             previewFrame.setScaleX(0.96f);
             previewFrame.setScaleY(0.96f);
             previewFrame.animate().alpha(1f).scaleX(1f).scaleY(1f).setDuration(300).setInterpolator(Ui.EASE).start();
-            if (t.connected) tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
+            tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
             main.removeCallbacks(previewTimeout);
             previewTimeout = () -> {
-                if (tvView != null && tvView.getAlpha() == 0f && t.connected) previewStatus.setText("No picture");
+                if (tvView != null && tvView.getAlpha() == 0f) previewStatus.setText("No picture from " + t.label);
             };
-            main.postDelayed(previewTimeout, 6000);
+            main.postDelayed(previewTimeout, 5000);
         } catch (Exception e) {
             Log.w(TAG, "preview failed: " + e);
-            previewStatus.setText("Preview not available");
+            stopPreview();
         }
     }
 
@@ -1407,7 +1406,7 @@ public class HomeActivity extends Activity {
                 glyphAndLabel(card, getDrawable(R.drawable.ic_input), true, t.label, hDp);
                 if (t.connected) {
                     View dot = new View(this);
-                    dot.setBackground(Ui.circle(Ui.ACCENT));
+                    dot.setBackground(Ui.circle(t.on ? Ui.ACCENT : 0x66FFFFFF));
                     FrameLayout.LayoutParams dl = new FrameLayout.LayoutParams(px(8), px(8), Gravity.TOP | Gravity.END);
                     dl.topMargin = px(9);
                     dl.rightMargin = px(9);

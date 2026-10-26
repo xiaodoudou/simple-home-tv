@@ -216,7 +216,7 @@ public class SettingsActivity extends Activity {
         Pins pins = new Pins(prefs.pins());
         for (Tile t : inputs) {
             boolean on = pins.isPinned(t.id);
-            rows.add(new Row(t.label, t.connected ? "Connected" : "Nothing connected", on ? "On home" : "Hidden", () -> {
+            rows.add(new Row(t.label, t.on ? "On" : t.connected ? "In standby" : "Nothing connected", on ? "On home" : "Hidden", () -> {
                 Pins p = new Pins(prefs.pins());
                 p.toggle(t.id);
                 prefs.setPins(p.serialize());

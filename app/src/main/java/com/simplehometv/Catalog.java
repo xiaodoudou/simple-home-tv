@@ -91,13 +91,17 @@ final class Catalog {
         Intent view = new Intent(Intent.ACTION_VIEW)
                 .setDataAndType(TvContract.buildChannelUriForPassthroughInput(i.getId()), "vnd.android.cursor.item/channel")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        boolean connected;
+        int state = state(tim, i.getId());
+        return Tile.input(i.getId(), label, view, state != TvInputManager.INPUT_STATE_DISCONNECTED,
+                state == TvInputManager.INPUT_STATE_CONNECTED);
+    }
+
+    static int state(TvInputManager tim, String inputId) {
         try {
-            connected = tim.getInputState(i.getId()) != TvInputManager.INPUT_STATE_DISCONNECTED;
+            return tim.getInputState(inputId);
         } catch (Exception e) {
-            connected = false;
+            return TvInputManager.INPUT_STATE_DISCONNECTED;
         }
-        return Tile.input(i.getId(), label, view, connected);
     }
 
     private static String label(Context c, TvInputInfo i) {

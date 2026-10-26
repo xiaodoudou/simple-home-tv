@@ -13,9 +13,10 @@ public final class Tile {
     public final String pkg;         // APP only
     public final String inputId;     // INPUT only
     public final Intent launch;      // APP and INPUT only
-    public final boolean connected;  // INPUT only
+    public final boolean connected;  // INPUT only: something is plugged in
+    public final boolean on;         // INPUT only: and it is switched on, not in standby
 
-    private Tile(String id, String label, Kind kind, String pkg, String inputId, Intent launch, boolean connected) {
+    private Tile(String id, String label, Kind kind, String pkg, String inputId, Intent launch, boolean connected, boolean on) {
         this.id = id;
         this.label = label;
         this.kind = kind;
@@ -23,21 +24,22 @@ public final class Tile {
         this.inputId = inputId;
         this.launch = launch;
         this.connected = connected;
+        this.on = on;
     }
 
     public static Tile app(String pkg, String label, Intent launch) {
-        return new Tile("app:" + pkg, label, Kind.APP, pkg, null, launch, false);
+        return new Tile("app:" + pkg, label, Kind.APP, pkg, null, launch, false, false);
     }
 
-    public static Tile input(String inputId, String label, Intent launch, boolean connected) {
-        return new Tile("input:" + inputId, label, Kind.INPUT, null, inputId, launch, connected);
+    public static Tile input(String inputId, String label, Intent launch, boolean connected, boolean on) {
+        return new Tile("input:" + inputId, label, Kind.INPUT, null, inputId, launch, connected, on);
     }
 
     public static Tile allApps() {
-        return new Tile("all_apps", "All apps", Kind.ALL_APPS, null, null, null, false);
+        return new Tile("all_apps", "All apps", Kind.ALL_APPS, null, null, null, false, false);
     }
 
     public static Tile getApps() {
-        return new Tile("get_apps", "Get apps", Kind.GET_APPS, null, null, null, false);
+        return new Tile("get_apps", "Get apps", Kind.GET_APPS, null, null, null, false, false);
     }
 }
