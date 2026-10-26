@@ -137,14 +137,18 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             return;
         }
         cover.animate().cancel();
-        // Pause first, so the frame copied is the one on screen.
-        try {
-            mp.pause();
-            resumeAt = mp.getCurrentPosition();
-        } catch (Exception e) {
-            resumeAt = 0;
-        }
-        afterNextFrame(this::copyStill);
+        // Dim the real 4K video first: the copied frame is 1080p and misses the TV's picture processing, so it
+        // only ever appears under the dim, and blurring at once.
+        dimTo(DIM, 300, () -> {
+            if (!paused || mp == null) return;
+            try {
+                mp.pause();
+                resumeAt = mp.getCurrentPosition();
+            } catch (Exception e) {
+                resumeAt = 0;
+            }
+            afterNextFrame(this::copyStill);
+        });
     }
 
     /** Swaps the paused video for a picture of the same frame, drawn with the UI, then frees the plane. */
@@ -203,15 +207,13 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             main.postDelayed(() -> revealWhenCaughtUp(p, since), 40);   // let the unblur finish first
             return;
         }
+        // Back on the real video, still under the dim; then the dim lifts off the 4K picture.
         still.animate().cancel();
-        still.animate().alpha(0f).setDuration(200).withEndAction(() -> {
-            still.setVisibility(GONE);
-            still.setImageBitmap(null);
-            still.setAlpha(1f);
-            soft.setVisibility(GONE);
-            soft.setImageBitmap(null);
-        }).start();
-        dimTo(0f, 200, null);
+        still.setVisibility(GONE);
+        still.setImageBitmap(null);
+        soft.setVisibility(GONE);
+        soft.setImageBitmap(null);
+        dimTo(0f, 450, null);
     }
 
     /**
@@ -248,8 +250,6 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
 
     private void setBlur(float level) {
         blurLevel = level;
-        dim.animate().cancel();
-        dim.setAlpha(DIM * level);
         soft.setAlpha(level);
     }
 
@@ -306,6 +306,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             }
             if (blurAnim != null) blurAnim.cancel();
             setBlur(0f);
+            dimTo(0f, 300, null);
             still.animate().cancel();
             still.setVisibility(GONE);
             soft.setVisibility(GONE);
