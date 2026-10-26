@@ -115,17 +115,25 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
         paused = true;
         afterPause = then;
-        try {
-            if (mp != null) resumeAt = mp.getCurrentPosition();
-        } catch (Exception e) {
-            resumeAt = 0;
-        }
         if (mp == null || holder == null || getWidth() == 0) {
+            resumeAt = 0;
             leavePlane();
             return;
         }
         cover.animate().cancel();
-        // The paused frame stays on screen as a picture drawn with the UI, under the input's live picture.
+        // Pause first, so the frame copied below is the one on screen and swapping to it changes nothing.
+        try {
+            mp.pause();
+            resumeAt = mp.getCurrentPosition();
+        } catch (Exception e) {
+            resumeAt = 0;
+        }
+        afterNextFrame(this::copyStill);
+    }
+
+    /** Swaps the paused video for a picture of the same frame, drawn with the UI, then frees the plane. */
+    private void copyStill() {
+        if (!paused) return;
         android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(),
                 android.graphics.Bitmap.Config.ARGB_8888);
         try {
@@ -135,37 +143,17 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                     if (paused) leavePlane();
                     return;
                 }
-                // Fade the frame in over the playing video, and let it go only once the frame is fully drawn.
                 still.animate().cancel();
                 still.setImageBitmap(frame);
-                still.setAlpha(0f);
+                still.setAlpha(1f);
                 still.setVisibility(VISIBLE);
-                still.animate().alpha(1f).setDuration(200).withEndAction(() -> afterNextFrame(() -> {
+                afterNextFrame(() -> {
                     if (paused) leavePlane();
-                })).start();
+                });
             }, main);
         } catch (Exception e) {
             leavePlane();
         }
-    }
-
-    /** The paused frame, or null when there is none. */
-    android.graphics.Bitmap stillFrame() {
-        android.graphics.drawable.Drawable d = still.getVisibility() == VISIBLE ? still.getDrawable() : null;
-        return d instanceof android.graphics.drawable.BitmapDrawable ? ((android.graphics.drawable.BitmapDrawable) d).getBitmap() : null;
-    }
-
-    /** Runs once the window has drawn the next frame, so what was just shown is really on screen. */
-    private void afterNextFrame(Runnable r) {
-        postOnAnimation(() -> postOnAnimation(() -> main.postDelayed(r, 34)));
-    }
-
-    private void leavePlane() {
-        release();
-        video.setVisibility(GONE);      // frees the plane
-        Runnable then = afterPause;
-        afterPause = null;
-        if (then != null) then.run();
     }
 
     /** Carries on from where {@link #pauseForInput()} left off; {@code onShown} runs at its first frame. */
@@ -181,8 +169,13 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
         paused = false;
         if (mp != null) {
-            // Left before the pause finished: the video never stopped, so just drop the still.
+            // Left before the pause finished: the player is still here, so carry on with it.
             afterPause = null;
+            resumeAt = 0;
+            try {
+                mp.start();
+            } catch (Exception ignored) {
+            }
             still.animate().cancel();
             still.setVisibility(GONE);
             if (this.onShown != null) {
