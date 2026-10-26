@@ -50,11 +50,11 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private final SurfaceView video;
     private final View cover;
     private final android.widget.ImageView still;   // the frame the aerial was paused on, while an input shows
+    private final android.widget.ImageView soft;    // a blurred copy of it, faded in over it
     // Dims the background while an input shows. The still is drawn with the UI, which the TV's picture processing
     // never touches, so it can't match the video's colours; the swap happens under the dim, where that can't show.
     private final View dim;
     static final float DIM = 0.55f;
-    static final float BLUR = 18f;
     private final File dir;
     private final Prefs prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -82,6 +82,11 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         still.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
         still.setVisibility(GONE);
         addView(still, full());
+        soft = new android.widget.ImageView(c);
+        soft.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
+        soft.setAlpha(0f);
+        soft.setVisibility(GONE);
+        addView(soft, full());
         dim = new View(c);
         dim.setBackgroundColor(0xFF000000);
         dim.setAlpha(0f);
@@ -157,8 +162,10 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 still.animate().cancel();
                 still.setImageBitmap(frame);
                 still.setAlpha(1f);
+                soft.setImageBitmap(blurred(frame));
                 setBlur(0f);
                 still.setVisibility(VISIBLE);
+                soft.setVisibility(VISIBLE);
                 // Free the video hardware under the still, then blur and dim it progressively.
                 afterNextFrame(() -> {
                     if (!paused) return;
@@ -201,8 +208,21 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             still.setVisibility(GONE);
             still.setImageBitmap(null);
             still.setAlpha(1f);
+            soft.setVisibility(GONE);
+            soft.setImageBitmap(null);
         }).start();
         dimTo(0f, 200, null);
+    }
+
+    /**
+     * A soft blur made once, by shrinking the frame and letting the view scale it back up smoothly: animating a
+     * real blur means recomputing it every frame, which this TV's GPU can't do at full frame rate.
+     */
+    private static android.graphics.Bitmap blurred(android.graphics.Bitmap frame) {
+        int w = Math.max(1, frame.getWidth() / 8), h = Math.max(1, frame.getHeight() / 8);
+        android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(frame, w, h, true);
+        android.graphics.Bitmap smaller = android.graphics.Bitmap.createScaledBitmap(small, Math.max(1, w / 3), Math.max(1, h / 3), true);
+        return android.graphics.Bitmap.createScaledBitmap(smaller, w, h, true);
     }
 
     static final long BLUR_MS = 450;
@@ -230,11 +250,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         blurLevel = level;
         dim.animate().cancel();
         dim.setAlpha(DIM * level);
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            float r = BLUR * level;
-            still.setRenderEffect(r < 0.5f ? null : android.graphics.RenderEffect.createBlurEffect(r, r,
-                    android.graphics.Shader.TileMode.CLAMP));
-        }
+        soft.setAlpha(level);
     }
 
     /** Fades the dim (black over the background) to {@code alpha}; {@code end} runs when it gets there. */
@@ -286,6 +302,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             setBlur(0f);
             still.animate().cancel();
             still.setVisibility(GONE);
+            soft.setVisibility(GONE);
             if (this.onShown != null) {
                 Runnable r = this.onShown;
                 this.onShown = null;
@@ -293,10 +310,13 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             }
             return;
         }
-        // Unblur back to the sharp frame while the video restarts underneath; the still goes when both are done.
-        animateBlur(0f, BLUR_MS, null);
-        if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
-        else if (holder != null) playNext();
+        // Unblur back to the sharp frame first, then restart the video under it: starting a player blocks this
+        // thread for a moment, which would make the unblur stutter.
+        animateBlur(0f, BLUR_MS, () -> {
+            if (paused) return;
+            if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
+            else if (holder != null) playNext();
+        });
     }
 
     /** Off leaves only the gradient. */
