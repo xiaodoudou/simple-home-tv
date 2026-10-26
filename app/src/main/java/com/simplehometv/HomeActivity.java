@@ -282,7 +282,9 @@ public class HomeActivity extends Activity {
         root.addView(aerial, full());
         previewFrame = new FrameLayout(this);
         previewFrame.setVisibility(View.GONE);
-        root.addView(previewFrame, full());     // a focused input's live picture replaces the aerial
+        previewFrame.setBackground(Ui.rounded(0xFF000000, px(16)));
+        Ui.clip(previewFrame, px(16));
+        previewFrame.setElevation(px(12));
 
         backShade = new View(this);
         backShade.setBackground(new LayerDrawable(new Drawable[]{
@@ -331,8 +333,8 @@ public class HomeActivity extends Activity {
         FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
         pl.leftMargin = px(14);
         pl.topMargin = px(14);
-        previewLabel.setVisibility(View.GONE);   // the focused tile already names the input
         previewFrame.addView(previewLabel, pl);
+        root.addView(previewFrame, new FrameLayout.LayoutParams(px(480), px(270)));
 
 
         hero = new LinearLayout(this);
@@ -769,7 +771,10 @@ public class HomeActivity extends Activity {
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
-                        if (w > 0 && h > 0) showInput();
+                        if (w > 0 && h > 0) {
+                            sizePreview(w / (float) h);
+                            showInput();
+                        }
                     }
 
                     @Override public void onConnectionFailed(String inputId) {
@@ -792,6 +797,7 @@ public class HomeActivity extends Activity {
             previewStatus.setText("");
             previewFrame.animate().cancel();
             previewFrame.setAlpha(1f);
+            sizePreview(16f / 9f);
             previewFrame.setVisibility(View.VISIBLE);
             Log.i(TAG, "preview tune " + t.inputId);
             tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
@@ -810,6 +816,23 @@ public class HomeActivity extends Activity {
             pendingPreview = () -> startPreview(t);
             main.postDelayed(pendingPreview, 1500);
         }
+    }
+
+    /** Fits the preview to the input's aspect ratio in the space between the clock and the dock. */
+    private void sizePreview(float ratio) {
+        int top = TOP + 84, bottom = BOTTOM + dockHeight() + 28;
+        int h = screenHdp - top - bottom;
+        int w = Math.round(h * ratio);
+        if (w > availW) {
+            w = availW;
+            h = Math.round(w / ratio);
+        }
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewFrame.getLayoutParams();
+        lp.width = px(w);
+        lp.height = px(h);
+        lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+        lp.topMargin = px(top + (screenHdp - top - bottom - h) / 2);
+        previewFrame.setLayoutParams(lp);
     }
 
     private void showInput() {

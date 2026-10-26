@@ -48,6 +48,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
 
     private final SurfaceView video;
     private final View cover;
+    private final android.widget.ImageView still;   // the frame the aerial was paused on, while an input shows
     private final File dir;
     private final Prefs prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -69,6 +70,10 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         video = new SurfaceView(c);
         video.getHolder().addCallback(this);
         addView(video, full());
+        still = new android.widget.ImageView(c);
+        still.setScaleType(android.widget.ImageView.ScaleType.FIT_XY);
+        still.setVisibility(GONE);
+        addView(still, full());
         cover = new View(c);
         cover.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{0xFF141A20, 0xFF090B10, 0xFF05060A}));
@@ -110,6 +115,29 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         } catch (Exception e) {
             resumeAt = 0;
         }
+        if (mp == null || holder == null || getWidth() == 0) {
+            leavePlane();
+            return;
+        }
+        // The paused frame stays on screen as a picture drawn with the UI, under the input's live picture.
+        android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(),
+                android.graphics.Bitmap.Config.ARGB_8888);
+        try {
+            android.view.PixelCopy.request(video, frame, result -> {
+                if (result == android.view.PixelCopy.SUCCESS) {
+                    still.setImageBitmap(frame);
+                    still.setVisibility(VISIBLE);
+                } else {
+                    Log.w(TAG, "could not copy the aerial frame: " + result);
+                }
+                if (paused) leavePlane();
+            }, main);
+        } catch (Exception e) {
+            leavePlane();
+        }
+    }
+
+    private void leavePlane() {
         release();
         video.setVisibility(GONE);      // frees the plane
     }
@@ -189,13 +217,20 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             mp.setDataSource(source);
             mp.setOnPreparedListener(p -> {
                 retries = 0;
-                if (resumeAt > 0) p.seekTo(resumeAt);
+                if (resumeAt > 0) {
+                    if (android.os.Build.VERSION.SDK_INT >= 26) p.seekTo(resumeAt, MediaPlayer.SEEK_CLOSEST);
+                    else p.seekTo(resumeAt);
+                }
                 resumeAt = 0;
                 p.start();
             });
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
-                    cover.animate().alpha(0f).setDuration(paused ? 0 : 900).start();
+                    cover.animate().alpha(0f).setDuration(900).start();
+                    if (still.getVisibility() == VISIBLE) {
+                        still.setVisibility(GONE);
+                        still.setImageBitmap(null);
+                    }
                     if (onShown != null) {
                         Runnable r = onShown;
                         onShown = null;
