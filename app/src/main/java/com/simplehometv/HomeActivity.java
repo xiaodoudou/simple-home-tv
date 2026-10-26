@@ -280,6 +280,8 @@ public class HomeActivity extends Activity {
 
         aerial = new AerialBackground(this);
         root.addView(aerial, full());
+        previewFrame = new FrameLayout(this);
+        previewFrame.setVisibility(View.GONE);
         root.addView(previewFrame, full());     // a focused input's live picture replaces the aerial
 
         backShade = new View(this);
@@ -319,8 +321,6 @@ public class HomeActivity extends Activity {
         root.addView(gear, gl);
         styleGear(false);
 
-        previewFrame = new FrameLayout(this);
-        previewFrame.setVisibility(View.GONE);
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
         previewStatus = Ui.text(this, Ui.medium(), 15, Ui.TEXT_DIM);
         previewStatus.setGravity(Gravity.CENTER);
