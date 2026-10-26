@@ -285,7 +285,6 @@ public class HomeActivity extends Activity {
         root.addView(aerial, full());
         previewFrame = new FrameLayout(this);
         previewFrame.setVisibility(View.GONE);
-        previewFrame.setBackground(Ui.rounded(0xFF000000, px(16)));
         Ui.clip(previewFrame, px(16));
 
         backShade = new View(this);
@@ -326,8 +325,12 @@ public class HomeActivity extends Activity {
         styleGear(false);
 
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
+        // Filled with the same blurred, dimmed frame as the background, so the box is invisible until the
+        // input's picture fades in, and melts back into the background when it closes.
         previewCover = new ImageView(this);
-        previewCover.setBackgroundColor(0xFF000000);
+        previewCover.setScaleType(ImageView.ScaleType.MATRIX);
+        previewCover.setColorFilter(Color.argb(Math.round(AerialBackground.DIM * 255), 0, 0, 0),
+                android.graphics.PorterDuff.Mode.SRC_ATOP);
         previewFrame.addView(previewCover, new FrameLayout.LayoutParams(-1, -1));
         previewLabel = Ui.text(this, Ui.semibold(), 13, Ui.TEXT);
         previewLabel.setBackground(Ui.rounded(0x99000000, px(8)));
@@ -873,16 +876,14 @@ public class HomeActivity extends Activity {
             String inputId = t.inputId;
             aerial.pauseForInput(() -> {
                 if (!inputId.equals(previewFor) || tvView == null) return;
-                // The box fades in as a black panel first; the input's surface only exists once it is up.
-                tvView.setVisibility(View.INVISIBLE);
-                previewFrame.setAlpha(0f);
+                previewCover.setImageBitmap(aerial.softFrame());
+                alignCover();
+                previewCover.setAlpha(1f);
+                previewFrame.setAlpha(1f);
                 previewFrame.setVisibility(View.VISIBLE);
-                previewFrame.animate().alpha(1f).setDuration(250).withEndAction(() -> {
-                    if (!inputId.equals(previewFor) || tvView == null) return;
-                    tvView.setVisibility(View.VISIBLE);
-                    Log.i(TAG, "preview tune " + inputId);
-                    tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
-                }).start();
+                tvView.setVisibility(View.VISIBLE);
+                Log.i(TAG, "preview tune " + inputId);
+                tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
             });
         } catch (Exception e) {
             Log.w(TAG, "preview failed: " + e);
@@ -916,6 +917,18 @@ public class HomeActivity extends Activity {
         lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         lp.topMargin = px(top + (screenHdp - top - bottom - h) / 2);
         previewFrame.setLayoutParams(lp);
+        alignCover();
+    }
+
+    /** Places the cover's blurred frame so it lines up with the same pixels in the background. */
+    private void alignCover() {
+        android.graphics.drawable.Drawable d = previewCover.getDrawable();
+        if (d == null || root.getWidth() == 0) return;
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewFrame.getLayoutParams();
+        android.graphics.Matrix m = new android.graphics.Matrix();
+        m.setScale(root.getWidth() / (float) d.getIntrinsicWidth(), root.getHeight() / (float) d.getIntrinsicHeight());
+        m.postTranslate(-(root.getWidth() - lp.width) / 2f, -lp.topMargin);
+        previewCover.setImageMatrix(m);
     }
 
 
@@ -957,18 +970,14 @@ public class HomeActivity extends Activity {
             }
         }
         if (tvView != null) tvView.setVisibility(View.INVISIBLE);
+        // The cover already matches the background, so the box can go at once; the aerial waits for the TV to
+        // switch its picture back.
+        previewFrame.setVisibility(View.GONE);
+        previewCover.setImageBitmap(null);
         if (!resumed) {
-            previewFrame.setVisibility(View.GONE);
             aerial.resumeAfterInput(null);
             return;
         }
-        // The black box fades away, then (once the TV has switched its picture back) the aerial comes back.
-        previewFrame.animate().cancel();
-        previewFrame.animate().alpha(0f).setDuration(250).withEndAction(() -> {
-            if (previewFor != null) return;
-            previewFrame.setVisibility(View.GONE);
-            previewFrame.setAlpha(1f);
-        }).start();
         main.postDelayed(() -> {
             if (previewFor == null) aerial.resumeAfterInput(null);
         }, SETTLE_MS);

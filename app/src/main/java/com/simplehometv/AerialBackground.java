@@ -259,6 +259,12 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         dim.animate().alpha(alpha).setStartDelay(0).setDuration(ms).withEndAction(end).start();
     }
 
+    /** The blurred copy of the paused frame (smaller than the screen), or null when there is none. */
+    android.graphics.Bitmap softFrame() {
+        android.graphics.drawable.Drawable d = soft.getVisibility() == VISIBLE ? soft.getDrawable() : null;
+        return d instanceof android.graphics.drawable.BitmapDrawable ? ((android.graphics.drawable.BitmapDrawable) d).getBitmap() : null;
+    }
+
     /** The paused frame, or null when there is none. */
     android.graphics.Bitmap stillFrame() {
         android.graphics.drawable.Drawable d = still.getVisibility() == VISIBLE ? still.getDrawable() : null;
