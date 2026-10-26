@@ -67,9 +67,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private String source;              // what was playing, to carry on from the same point
     private boolean sourceLocal;
     private int resumeAt;
-    private Runnable onShown;
-    private Runnable afterPause;
-    private int revealAt;               // the paused position: the still stays until the video is back there
+    private int revealAt;               // the frozen position: restoring plays up to here
 
     public AerialBackground(Context c) {
         super(c);
@@ -99,7 +97,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
 
     @Override public void surfaceCreated(SurfaceHolder h) {
         holder = h;
-        if (!paused) playNext();
+        if (!paused && !held) playNext();
     }
 
     @Override public void surfaceChanged(SurfaceHolder h, int format, int w, int height) { }
@@ -117,114 +115,158 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
 
     /** Resume after {@link #stop()} if the surface is still around. */
     public void resume() {
-        if (holder != null && mp == null && !paused) playNext();
+        if (holder != null && mp == null && !paused && !held) playNext();
     }
+
+    // ---- stepping aside for an input's live picture ----
+    //
+    // The input's picture and the aerial both need the TV's video planes, and the TV always draws the aerial's plane
+    // over the input's. So for an input the aerial is frozen on a copy of its current frame (drawn with the UI),
+    // the copy is blurred, and the video plane is freed; coming back runs the same steps in reverse. Each step is a
+    // separate call so the home can fit its own (the input box) between them.
+
+    private boolean frozen;             // the still is up, over the paused (or released) video
+    private Runnable whenCaughtUp;
 
     /**
-     * Steps aside for an input's live picture, which needs the TV's video planes (an aerial plane is always drawn
-     * over it). Remembers where the clip was.
+     * Pauses the video, crossfades a copy of the same frame over it (so the change from the TV's processed picture
+     * to the plain copy is gradual), then blurs and dims the copy. {@code done} runs once fully blurred; the
+     * paused video is still on its plane until {@link #releasePlane()}.
      */
-    public void pauseForInput(Runnable then) {
-        if (paused) {
-            if (then != null) then.run();
+    public void freeze(Runnable done) {
+        if (frozen) {
+            animateBlur(1f, BLUR_MS, done);
             return;
         }
+        frozen = true;
         paused = true;
-        afterPause = then;
         if (mp == null || holder == null || getWidth() == 0) {
             resumeAt = 0;
-            leavePlane();
+            cover.animate().cancel();
+            cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();   // the gradient stands in
             return;
         }
-        cover.animate().cancel();
-        // Dim the real 4K video first: the copied frame is 1080p and misses the TV's picture processing, so it
-        // only ever appears under the dim, and blurring at once.
-        dimTo(DIM, 300, () -> {
-            if (!paused || mp == null) return;
-            try {
-                mp.pause();
-                resumeAt = mp.getCurrentPosition();
-            } catch (Exception e) {
-                resumeAt = 0;
-            }
-            afterNextFrame(this::copyStill);
-        });
+        try {
+            mp.pause();
+            resumeAt = mp.getCurrentPosition();
+        } catch (Exception e) {
+            resumeAt = 0;
+        }
+        afterNextFrame(() -> copyStill(done));
     }
 
-    /** Swaps the paused video for a picture of the same frame, drawn with the UI, then frees the plane. */
-    private void copyStill() {
-        if (!paused) return;
+    private void copyStill(Runnable done) {
+        if (!frozen) return;
         android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(),
                 android.graphics.Bitmap.Config.ARGB_8888);
         try {
             android.view.PixelCopy.request(video, frame, result -> {
+                if (!frozen) return;
                 if (result != android.view.PixelCopy.SUCCESS) {
                     Log.w(TAG, "could not copy the aerial frame: " + result);
-                    if (paused) leavePlane();
+                    cover.animate().cancel();
+                    cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();
                     return;
                 }
                 still.animate().cancel();
                 still.setImageBitmap(frame);
-                still.setAlpha(1f);
-                soft.setImageBitmap(blurred(frame));
+                soft.setImageBitmap(Blur.of(frame));
                 setBlur(0f);
+                still.setAlpha(0f);
                 still.setVisibility(VISIBLE);
                 soft.setVisibility(VISIBLE);
-                // Free the video hardware under the still, then blur and dim it progressively.
-                afterNextFrame(() -> {
-                    if (!paused) return;
-                    Runnable then = afterPause;
-                    afterPause = null;
-                    release();
-                    video.setVisibility(GONE);
-                    animateBlur(1f, BLUR_MS, () -> {
-                        if (paused && then != null) then.run();
-                    });
-                });
+                still.animate().alpha(1f).setDuration(STILL_MS).withEndAction(() -> {
+                    if (frozen) animateBlur(1f, BLUR_MS, done);
+                }).start();
             }, main);
         } catch (Exception e) {
-            leavePlane();
+            if (done != null) done.run();
         }
     }
 
+    /** Frees the video plane under the frozen frame, keeping where the clip was. */
+    public void releasePlane() {
+        if (!frozen) return;
+        release();
+        video.setVisibility(GONE);
+    }
+
     /**
-     * Fades the still out once the resumed video is back at the paused frame. This TV's decoder resumes from the
-     * keyframe before it, up to a few seconds earlier; fading at once would show the picture jump back.
+     * Puts the clip back on its plane under the frozen frame and lets it play up to the frozen moment (this TV
+     * resumes from the keyframe before it), then pauses it there: {@code done} runs with the real video showing
+     * the same frame as the copy over it.
      */
-    private void revealWhenCaughtUp(MediaPlayer p, long since) {
-        if (p != mp || still.getVisibility() != VISIBLE) return;
+    public void restore(Runnable done) {
+        if (!frozen || mp != null) {    // never released: it is paused on the frozen frame already
+            if (done != null) done.run();
+            return;
+        }
+        whenCaughtUp = done;
+        paused = false;
+        holdPaused = true;
+        if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
+        else if (holder != null) playNext();
+    }
+
+    /** Unblurs and undims back to the sharp frozen frame. */
+    public void unblur(Runnable done) {
+        animateBlur(0f, BLUR_MS, done);
+    }
+
+    /** Crossfades from the frozen copy to the real video paused under it, then lets the video play on. */
+    public void thaw() {
+        if (!frozen) return;
+        frozen = false;
+        paused = false;
+        holdPaused = false;
+        whenCaughtUp = null;
+        if (blurAnim != null) blurAnim.cancel();
+        setBlur(0f);
+        if (mp != null) {
+            try {
+                mp.start();
+            } catch (Exception ignored) {
+            }
+            cover.animate().cancel();
+            cover.animate().alpha(0f).setDuration(STILL_MS).start();
+        } else {
+            resume();
+        }
+        still.animate().cancel();
+        still.animate().alpha(0f).setDuration(STILL_MS).withEndAction(() -> {
+            still.setVisibility(GONE);
+            still.setImageBitmap(null);
+            soft.setVisibility(GONE);
+            soft.setImageBitmap(null);
+        }).start();
+    }
+
+    public boolean isFrozen() {
+        return frozen;
+    }
+
+    static final long STILL_MS = 300;
+    private boolean holdPaused;         // restoring: stop at the frozen moment instead of playing on
+
+    private void waitCaughtUp(MediaPlayer p, long since) {
+        if (p != mp || !holdPaused) return;
         int at;
         try {
             at = p.getCurrentPosition();
         } catch (Exception e) {
             at = Integer.MAX_VALUE;
         }
-        if (at + 40 < revealAt && SystemClock.uptimeMillis() - since < 4000) {
-            main.postDelayed(() -> revealWhenCaughtUp(p, since), 40);
+        if (at + 20 < revealAt && SystemClock.uptimeMillis() - since < 5000) {
+            main.postDelayed(() -> waitCaughtUp(p, since), 15);
             return;
         }
-        if (blurAnim != null && blurAnim.isRunning()) {
-            main.postDelayed(() -> revealWhenCaughtUp(p, since), 40);   // let the unblur finish first
-            return;
+        try {
+            p.pause();
+        } catch (Exception ignored) {
         }
-        // Back on the real video, still under the dim; then the dim lifts off the 4K picture.
-        still.animate().cancel();
-        still.setVisibility(GONE);
-        still.setImageBitmap(null);
-        soft.setVisibility(GONE);
-        soft.setImageBitmap(null);
-        dimTo(0f, 450, null);
-    }
-
-    /**
-     * A soft blur made once, by shrinking the frame and letting the view scale it back up smoothly: animating a
-     * real blur means recomputing it every frame, which this TV's GPU can't do at full frame rate.
-     */
-    private static android.graphics.Bitmap blurred(android.graphics.Bitmap frame) {
-        int w = Math.max(1, frame.getWidth() / 8), h = Math.max(1, frame.getHeight() / 8);
-        android.graphics.Bitmap small = android.graphics.Bitmap.createScaledBitmap(frame, w, h, true);
-        android.graphics.Bitmap smaller = android.graphics.Bitmap.createScaledBitmap(small, Math.max(1, w / 3), Math.max(1, h / 3), true);
-        return android.graphics.Bitmap.createScaledBitmap(smaller, w, h, true);
+        Runnable done = whenCaughtUp;
+        whenCaughtUp = null;
+        if (done != null) afterNextFrame(done);     // a frame for the paused picture to reach the screen
     }
 
     static final long BLUR_MS = 450;
@@ -251,23 +293,12 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private void setBlur(float level) {
         blurLevel = level;
         soft.setAlpha(level);
+        dim.setAlpha(DIM * level);
     }
 
-    /** Fades the dim (black over the background) to {@code alpha}; {@code end} runs when it gets there. */
-    public void dimTo(float alpha, long ms, Runnable end) {
-        dim.animate().cancel();
-        dim.animate().alpha(alpha).setStartDelay(0).setDuration(ms).withEndAction(end).start();
-    }
-
-    /** The blurred copy of the paused frame (smaller than the screen), or null when there is none. */
+    /** The blurred copy of the frozen frame (smaller than the screen), or null when there is none. */
     android.graphics.Bitmap softFrame() {
         android.graphics.drawable.Drawable d = soft.getVisibility() == VISIBLE ? soft.getDrawable() : null;
-        return d instanceof android.graphics.drawable.BitmapDrawable ? ((android.graphics.drawable.BitmapDrawable) d).getBitmap() : null;
-    }
-
-    /** The paused frame, or null when there is none. */
-    android.graphics.Bitmap stillFrame() {
-        android.graphics.drawable.Drawable d = still.getVisibility() == VISIBLE ? still.getDrawable() : null;
         return d instanceof android.graphics.drawable.BitmapDrawable ? ((android.graphics.drawable.BitmapDrawable) d).getBitmap() : null;
     }
 
@@ -276,55 +307,14 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         postOnAnimation(() -> postOnAnimation(() -> main.postDelayed(r, 34)));
     }
 
-    private void leavePlane() {
-        release();
-        video.setVisibility(GONE);      // frees the plane
-        Runnable then = afterPause;
-        afterPause = null;
-        if (then != null) main.postDelayed(then, 120);
+    /** Holds playback back until released: the home opens an input first, before the aerial takes a plane. */
+    public void setHeld(boolean held) {
+        if (this.held == held) return;
+        this.held = held;
+        if (!held) resume();
     }
 
-    /** Carries on from where {@link #pauseForInput()} left off; {@code onShown} runs at its first frame. */
-    public void resumeAfterInput(Runnable onShown) {
-        if (onShown != null) this.onShown = onShown;
-        if (!paused) {
-            if (mp != null && this.onShown != null && cover.getAlpha() == 0f) {
-                Runnable r = this.onShown;
-                this.onShown = null;
-                r.run();
-            }
-            return;
-        }
-        paused = false;
-        if (mp != null) {
-            // Left before the pause finished: the player is still here, so carry on with it.
-            afterPause = null;
-            resumeAt = 0;
-            try {
-                mp.start();
-            } catch (Exception ignored) {
-            }
-            if (blurAnim != null) blurAnim.cancel();
-            setBlur(0f);
-            dimTo(0f, 300, null);
-            still.animate().cancel();
-            still.setVisibility(GONE);
-            soft.setVisibility(GONE);
-            if (this.onShown != null) {
-                Runnable r = this.onShown;
-                this.onShown = null;
-                r.run();
-            }
-            return;
-        }
-        // Unblur back to the sharp frame first, then restart the video under it: starting a player blocks this
-        // thread for a moment, which would make the unblur stutter.
-        animateBlur(0f, BLUR_MS, () -> {
-            if (paused) return;
-            if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
-            else if (holder != null) playNext();
-        });
-    }
+    private boolean held;
 
     /** Off leaves only the gradient. */
     public void setActive(boolean on) {
@@ -348,7 +338,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     }
 
     private void playNext() {
-        if (!active || paused || holder == null) return;
+        if (!active || paused || held || holder == null) return;
         if (source != null && resumeAt > 0) {
             play(source, sourceLocal);  // carry on with the clip that stepped aside
             return;
@@ -395,13 +385,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             });
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
-                    cover.animate().alpha(0f).setDuration(900).start();
-                    if (still.getVisibility() == VISIBLE) revealWhenCaughtUp(p, SystemClock.uptimeMillis());
-                    if (onShown != null) {
-                        Runnable r = onShown;
-                        onShown = null;
-                        r.run();
-                    }
+                    if (holdPaused) waitCaughtUp(p, SystemClock.uptimeMillis());
+                    else cover.animate().alpha(0f).setDuration(900).start();
                 }
                 return false;
             });
@@ -409,7 +394,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             mp.setOnErrorListener((p, w, e) -> {
                 Log.w(TAG, "can't play " + source + " (" + w + "/" + e + ")");
                 release();
-                if (paused) return true;        // an input took the decoder; the still frame stays
+                if (frozen) return true;        // an input took the decoder; the frozen frame stays
                 cover.setAlpha(1f);
                 boolean broken = e == MediaPlayer.MEDIA_ERROR_MALFORMED || e == MediaPlayer.MEDIA_ERROR_UNSUPPORTED;
                 if (local && broken) {

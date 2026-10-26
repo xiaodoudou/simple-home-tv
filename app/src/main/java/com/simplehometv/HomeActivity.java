@@ -81,7 +81,6 @@ public class HomeActivity extends Activity {
     private LinearLayout contentRow, dockBox;
     private FrameLayout previewFrame;
     private TvView tvView;
-    private TextView previewLabel;
     private ImageView previewCover;   // the paused aerial's piece behind the box, fading out as the input appears
     private View drawerBg;
     private LinearLayout drawerHeader;
@@ -109,8 +108,6 @@ public class HomeActivity extends Activity {
     private String shownFor;                    // tile id whose content row is drawn
     private int spotGen;                        // bumps on every row change, so stale fades do nothing
     private String previewFor;                  // input id the preview is tuned to
-    private long previewStoppedAt;
-    private int previewRetries;
 
     private final OkKey okKey = new OkKey();
     private long menuOpenedAt;
@@ -192,6 +189,11 @@ public class HomeActivity extends Activity {
         mode = Mode.HOME;
         renderDock();
         preloadSpots();
+        Tile warm = warmCandidate();
+        if (warm != null && !warm.inputId.equals(warmFor)) {
+            aerial.setHeld(true);           // the input's session first, then the aerial (see "input preview")
+            warm(warm);
+        }
         focusDock(Math.max(0, indexOf(dockTiles, keep)));
         if (onGear) focusGear();
         updateClock();
@@ -211,7 +213,10 @@ public class HomeActivity extends Activity {
         main.removeCallbacks(tick);
         main.removeCallbacks(holdTimer);
         okKey.reset();
-        stopPreview();
+        main.removeCallbacks(pendingPreview);
+        aerial.thaw();
+        aerial.setHeld(false);
+        cool();
     }
 
     @Override protected void onStop() {
@@ -332,13 +337,6 @@ public class HomeActivity extends Activity {
         previewCover.setColorFilter(Color.argb(Math.round(AerialBackground.DIM * 255), 0, 0, 0),
                 android.graphics.PorterDuff.Mode.SRC_ATOP);
         previewFrame.addView(previewCover, new FrameLayout.LayoutParams(-1, -1));
-        previewLabel = Ui.text(this, Ui.semibold(), 13, Ui.TEXT);
-        previewLabel.setBackground(Ui.rounded(0x99000000, px(8)));
-        previewLabel.setPadding(px(10), px(5), px(10), px(5));
-        FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.START);
-        pl.leftMargin = px(14);
-        pl.topMargin = px(14);
-        previewFrame.addView(previewLabel, pl);
         root.addView(previewFrame, new FrameLayout.LayoutParams(px(480), px(270)));
 
 
@@ -560,11 +558,9 @@ public class HomeActivity extends Activity {
             spotFor = null;
             fadeOutSpot();
             if (t.kind == Tile.Kind.INPUT && prefs.preview() && !prefs.previewOff(t.inputId)) {
-                previewRetries = 0;
+                // Only when focus rests on the tile: passing over it leaves the aerial alone.
                 pendingPreview = () -> startPreview(t);
-                // The TV needs a moment to close the last preview; tuning sooner gets the new one closed too.
-                long sinceStop = SystemClock.uptimeMillis() - previewStoppedAt;
-                main.postDelayed(pendingPreview, Math.max(800, 1500 - sinceStop));
+                main.postDelayed(pendingPreview, 700);
             }
         }
     }
@@ -822,84 +818,168 @@ public class HomeActivity extends Activity {
 
 
     // ---- input preview ----
+    //
+    // An input's picture and the aerial both need the TV's video planes, and the TV always draws the aerial over the
+    // input. Starting or stopping an input also makes the TV blank its video for a moment. So the input's session
+    // is opened once, when the home appears and before the aerial takes a plane, and kept running muted in a
+    // one-pixel window under the aerial. Focusing its tile then only freezes the aerial on a blurred copy and opens
+    // the box onto the picture that is already live; leaving reverses that, and the session never stops while the
+    // home is up.
 
-    /**
-     * Shows the input's live picture. Only for a device that is on: the TV closes a preview of an input in standby
-     * after a moment, and a box that opens and closes again just reads as a glitch.
-     */
-    private void startPreview(Tile t) {
-        if (mode != Mode.HOME || zone != Zone.DOCK) return;
+    private String warmFor;                 // input whose session is open
+    private boolean warmVideo;              // ...and has a picture
+    private int previewGen;                 // bumps on every enter/leave, so stale steps do nothing
+    private static final long REVEAL_MS = 450, COVER_MS = 300, SETTLE_MS = 400;
+
+    private boolean previewable(Tile t) {
+        if (t.kind != Tile.Kind.INPUT || !prefs.preview() || prefs.previewOff(t.inputId)) return false;
         android.media.tv.TvInputManager tim = (android.media.tv.TvInputManager) getSystemService(TV_INPUT_SERVICE);
-        if (tim == null || Catalog.state(tim, t.inputId) != android.media.tv.TvInputManager.INPUT_STATE_CONNECTED) return;
-        try {
-            if (tvView == null) {
-                tvView = new TvView(this);
-                tvView.setFocusable(false);
-                // Above the aerial video, which is also a video surface behind the window.
-                tvView.setZOrderMediaOverlay(true);
-                tvView.setCallback(new TvView.TvInputCallback() {
-                    @Override public void onVideoAvailable(String inputId) {
-                        Log.i(TAG, "preview video available");
-                        // Give the TV time to finish switching its picture settings while all is still black.
-                        main.removeCallbacks(revealInput);
-                        main.postDelayed(revealInput, SETTLE_MS);
-                    }
+        return tim != null && Catalog.state(tim, t.inputId) == android.media.tv.TvInputManager.INPUT_STATE_CONNECTED;
+    }
 
-                    @Override public void onVideoSizeChanged(String inputId, int w, int h) {
-                        if (w > 0 && h > 0) sizePreview(w / (float) h);
-                    }
+    /** The pinned input to keep warm, or null. */
+    private Tile warmCandidate() {
+        for (Tile t : dockTiles) if (previewable(t)) return t;
+        return null;
+    }
 
-                    @Override public void onConnectionFailed(String inputId) {
-                        Log.i(TAG, "preview connection failed");
-                        retryPreview();
-                    }
-
-                    @Override public void onDisconnected(String inputId) {
-                        Log.i(TAG, "preview disconnected");
-                        retryPreview();
-                    }
-                });
-                previewFrame.addView(tvView, 0, full());
+    private void ensureTvView() {
+        if (tvView != null) return;
+        tvView = new TvView(this);
+        tvView.setFocusable(false);
+        tvView.setZOrderMediaOverlay(true);
+        tvView.setStreamVolume(0f);         // a picture only: the input's sound must not play on the home
+        tvView.setCallback(new TvView.TvInputCallback() {
+            @Override public void onVideoAvailable(String inputId) {
+                Log.i(TAG, "input video available");
+                if (!inputId.equals(warmFor)) return;
+                warmVideo = true;
+                aerial.setHeld(false);
+                if (inputId.equals(previewFor) && previewCover.getAlpha() > 0f) {
+                    int gen = previewGen;
+                    main.postDelayed(() -> reveal(gen), SETTLE_MS);
+                }
             }
-            main.removeCallbacks(closeInput);
-            main.removeCallbacks(revealInput);
-            previewFor = t.inputId;
-            previewLabel.setText(t.label);
+
+            @Override public void onVideoSizeChanged(String inputId, int w, int h) {
+                if (w > 0 && h > 0 && inputId.equals(previewFor)) sizePreview(w / (float) h);
+            }
+
+            @Override public void onConnectionFailed(String inputId) {
+                Log.i(TAG, "input connection failed");
+                lostInput();
+            }
+
+            @Override public void onDisconnected(String inputId) {
+                Log.i(TAG, "input disconnected");
+                lostInput();
+            }
+        });
+        previewFrame.addView(tvView, 0, pixel());
+    }
+
+    private static FrameLayout.LayoutParams pixel() {
+        return new FrameLayout.LayoutParams(1, 1);
+    }
+
+    /** Opens the input's session in the one-pixel window. The TV's blank, if any, happens now, unseen. */
+    private void warm(Tile t) {
+        ensureTvView();
+        warmFor = t.inputId;
+        warmVideo = false;
+        sizePreview(16f / 9f);
+        tvView.setLayoutParams(pixel());
+        previewCover.setAlpha(0f);
+        previewFrame.setVisibility(View.VISIBLE);
+        Log.i(TAG, "input warm " + t.inputId);
+        tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
+        main.postDelayed(() -> aerial.setHeld(false), 2500);     // in case the input never shows a picture
+    }
+
+    /** Closes the input's session (leaving the home, or switching to the input for real). */
+    private void cool() {
+        previewGen++;
+        previewFor = null;
+        warmFor = null;
+        warmVideo = false;
+        if (tvView != null) {
+            try {
+                tvView.reset();
+            } catch (Exception ignored) {
+            }
+            tvView.setLayoutParams(pixel());
+        }
+        previewFrame.setVisibility(View.GONE);
+        previewCover.setImageBitmap(null);
+    }
+
+    private void lostInput() {
+        warmFor = null;
+        warmVideo = false;
+        aerial.setHeld(false);
+        if (previewFor != null) {
             previewCover.animate().cancel();
-            previewCover.setAlpha(1f);
-            previewFrame.animate().cancel();
-            previewFrame.setAlpha(1f);
-            sizePreview(16f / 9f);
-            // Starting an input makes the TV blank its video and load that input's picture settings, which shows
-            // as a black flash. The background dims onto a still of the aerial, the box opens black, and
-            // revealInput fades the picture in once the TV has settled.
-            String inputId = t.inputId;
-            aerial.pauseForInput(() -> {
-                if (!inputId.equals(previewFor) || tvView == null) return;
-                previewCover.setImageBitmap(aerial.softFrame());
-                alignCover();
-                previewCover.setAlpha(1f);
-                previewFrame.setAlpha(1f);
-                previewFrame.setVisibility(View.VISIBLE);
-                tvView.setVisibility(View.VISIBLE);
-                Log.i(TAG, "preview tune " + inputId);
-                tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
-            });
-        } catch (Exception e) {
-            Log.w(TAG, "preview failed: " + e);
-            stopPreview();
+            previewCover.animate().alpha(1f).setDuration(COVER_MS).start();
         }
     }
 
-    /** The TV sometimes drops a preview it has just opened; try again while the tile is still focused. */
-    private void retryPreview() {
-        Tile t = mode == Mode.HOME && zone == Zone.DOCK && dockFocus < dockTiles.size() ? dockTiles.get(dockFocus) : null;
-        boolean same = t != null && t.kind == Tile.Kind.INPUT && t.inputId.equals(previewFor);
-        stopPreview();
-        if (same && previewRetries++ < 2) {
-            pendingPreview = () -> startPreview(t);
-            main.postDelayed(pendingPreview, 1500);
-        }
+    /** Focus rests on an input tile: freeze the aerial, blur it, open the box onto the input's picture. */
+    private void startPreview(Tile t) {
+        if (mode != Mode.HOME || zone != Zone.DOCK || !previewable(t)) return;
+        if (t.inputId.equals(previewFor)) return;
+        int gen = ++previewGen;
+        previewFor = t.inputId;
+        ensureTvView();
+        aerial.freeze(() -> {
+            if (gen != previewGen) return;
+            // The box opens filled with the same blurred frame as around it, so it is invisible at first.
+            previewCover.animate().cancel();
+            previewCover.setImageBitmap(aerial.softFrame());
+            sizePreview(16f / 9f);
+            previewCover.setAlpha(1f);
+            tvView.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
+            previewFrame.setVisibility(View.VISIBLE);
+            aerial.releasePlane();
+            if (t.inputId.equals(warmFor)) {
+                if (warmVideo) main.postDelayed(() -> reveal(gen), 120);
+            } else {
+                warmFor = t.inputId;            // first visit: open it now, it stays open after
+                warmVideo = false;
+                Log.i(TAG, "input tune " + t.inputId);
+                tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
+            }
+        });
+    }
+
+    private void reveal(int gen) {
+        if (gen != previewGen || previewFor == null) return;
+        previewCover.animate().cancel();
+        previewCover.animate().alpha(0f).setStartDelay(0).setDuration(REVEAL_MS).start();
+    }
+
+    /**
+     * Focus left the input tile: the box melts back into the blurred frame, the aerial returns to its plane paused
+     * on that same frame, unblurs, and plays on. The input's session stays open behind it.
+     */
+    private void stopPreview() {
+        main.removeCallbacks(pendingPreview);
+        if (previewFor == null) return;
+        int gen = ++previewGen;
+        previewFor = null;
+        if (!aerial.isFrozen()) return;
+        previewCover.animate().cancel();
+        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(COVER_MS).withEndAction(() -> {
+            if (gen != previewGen) return;
+            aerial.restore(() -> {
+                if (gen != previewGen) return;
+                // The aerial is back on top of the input: the box can go, it only shows the aerial now.
+                if (tvView != null) tvView.setLayoutParams(pixel());
+                previewCover.setAlpha(0f);
+                aerial.unblur(() -> {
+                    if (gen == previewGen) aerial.thaw();
+                });
+            });
+        }).start();
     }
 
     /** Fits the preview to the input's aspect ratio in the space between the clock and the dock. */
@@ -930,58 +1010,6 @@ public class HomeActivity extends Activity {
         m.postTranslate(-(root.getWidth() - lp.width) / 2f, -lp.topMargin);
         previewCover.setImageMatrix(m);
     }
-
-
-
-    /**
-     * Ends the input picture. The aerial comes back first, over it; the input closes once the aerial has a frame
-     * on screen (or after a moment, if it has none), so nothing flashes black in between.
-     */
-    private void stopPreview() {
-        main.removeCallbacks(pendingPreview);
-        main.removeCallbacks(revealInput);
-        if (previewFor == null) return;
-        previewFor = null;
-        if (!resumed || previewFrame.getVisibility() != View.VISIBLE) {
-            closeInput.run();
-            return;
-        }
-        // The mirror of opening: the box fades to black, the input closes behind it, then the aerial comes back.
-        previewCover.animate().cancel();
-        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(FADE_MS).withEndAction(closeInput).start();
-    }
-
-    private static final long FADE_MS = 300, SETTLE_MS = 400;
-
-    private final Runnable revealInput = () -> {
-        if (previewFor == null) return;
-        previewCover.animate().cancel();
-        previewCover.animate().alpha(0f).setStartDelay(0).setDuration(450).start();
-    };
-
-    private final Runnable closeInput = () -> {
-        main.removeCallbacks(this.closeInput);
-        if (previewFor != null) return;     // an input took the screen again meanwhile
-        previewStoppedAt = SystemClock.uptimeMillis();
-        if (tvView != null) {
-            try {
-                tvView.reset();
-            } catch (Exception ignored) {
-            }
-        }
-        if (tvView != null) tvView.setVisibility(View.INVISIBLE);
-        // The cover already matches the background, so the box can go at once; the aerial waits for the TV to
-        // switch its picture back.
-        previewFrame.setVisibility(View.GONE);
-        previewCover.setImageBitmap(null);
-        if (!resumed) {
-            aerial.resumeAfterInput(null);
-            return;
-        }
-        main.postDelayed(() -> {
-            if (previewFor == null) aerial.resumeAfterInput(null);
-        }, SETTLE_MS);
-    };
 
     // ---- all apps ----
 
@@ -1238,7 +1266,7 @@ public class HomeActivity extends Activity {
                 startSafe(new Intent(this, SettingsActivity.class).putExtra(SettingsActivity.EXTRA_PAGE, SettingsActivity.PAGE_APPS));
                 break;
             case INPUT:
-                stopPreview();
+                cool();             // the TV app needs the input
                 openInput(t);
                 break;
             default:
