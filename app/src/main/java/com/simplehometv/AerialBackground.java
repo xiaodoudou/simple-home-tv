@@ -54,6 +54,7 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
     private Surface surface;
     private boolean downloading;
     private boolean active = true;
+    private int retries;
 
     public AerialBackground(Context c) {
         super(c);
@@ -130,7 +131,6 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
             mp.setVolume(0f, 0f);
             mp.setLooping(true);
             mp.setDataSource(source);
-            mp.setOnPreparedListener(MediaPlayer::start);
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
                     video.animate().alpha(1f).setDuration(800).start();
@@ -141,9 +141,19 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
                 Log.w(TAG, "can't play " + source + " (" + w + "/" + e + ")");
                 release();
                 video.setAlpha(0f);
-                //noinspection ResultOfMethodCallIgnored
-                if (local) new File(source).delete();
+                boolean broken = e == MediaPlayer.MEDIA_ERROR_MALFORMED || e == MediaPlayer.MEDIA_ERROR_UNSUPPORTED;
+                if (local && broken) {
+                    //noinspection ResultOfMethodCallIgnored
+                    new File(source).delete();
+                } else if (retries++ < 3) {
+                    // Usually the decoder is still held by a player that was just released: try again shortly.
+                    main.postDelayed(() -> { if (mp == null && active) play(source, local); }, 1500);
+                }
                 return true;
+            });
+            mp.setOnPreparedListener(p -> {
+                retries = 0;
+                p.start();
             });
             mp.prepareAsync();
         } catch (Exception e) {
