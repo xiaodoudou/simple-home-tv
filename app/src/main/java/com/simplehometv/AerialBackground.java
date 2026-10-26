@@ -8,7 +8,10 @@ import android.os.Looper;
 import android.util.Log;
 import android.view.Display;
 import android.view.SurfaceHolder;
+import android.view.Surface;
 import android.view.SurfaceView;
+import android.view.TextureView;
+import android.graphics.SurfaceTexture;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -47,6 +50,12 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private static String lastId;                       // so the order carries on between home and screensaver
 
     private final SurfaceView video;
+    // While an input preview is open the TV's video planes belong to it (an aerial plane would cover it), so the
+    // player draws through this TextureView instead: composited with the UI, Full HD, but still moving.
+    private final TextureView soft;
+    private Surface softSurface;
+    private boolean softMode;
+    private boolean leavingPlane;       // the SurfaceView is being hidden on purpose: keep the player
     private final View cover;
     private final File dir;
     private final Prefs prefs;
@@ -64,6 +73,28 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         video = new SurfaceView(c);
         video.getHolder().addCallback(this);
         addView(video, full());
+        soft = new TextureView(c);
+        soft.setOpaque(true);
+        soft.setAlpha(0f);
+        soft.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+            @Override public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
+                softSurface = new Surface(st);
+                if (softMode) toSoft();
+            }
+
+            @Override public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) { }
+
+            @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
+                if (softSurface != null) softSurface.release();
+                softSurface = null;
+                return true;
+            }
+
+            @Override public void onSurfaceTextureUpdated(SurfaceTexture st) {
+                if (softMode && soft.getAlpha() == 0f) soft.setAlpha(1f);
+            }
+        });
+        addView(soft, full());
         cover = new View(c);
         cover.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
                 new int[]{0xFF141A20, 0xFF090B10, 0xFF05060A}));
@@ -72,13 +103,23 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
 
     @Override public void surfaceCreated(SurfaceHolder h) {
         holder = h;
-        playNext();
+        leavingPlane = false;
+        if (mp != null && !softMode) {
+            try {
+                mp.setDisplay(h);
+                soft.setAlpha(0f);
+                return;
+            } catch (Exception e) {
+                release();
+            }
+        }
+        if (mp == null) playNext();
     }
 
     @Override public void surfaceChanged(SurfaceHolder h, int format, int w, int height) { }
 
     @Override public void surfaceDestroyed(SurfaceHolder h) {
-        release();
+        if (!leavingPlane) release();
         holder = null;
     }
 
@@ -90,7 +131,34 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
 
     /** Resume after {@link #stop()} if the surface is still around. */
     public void resume() {
-        if (holder != null && mp == null) playNext();
+        if (mp == null && (holder != null || (softMode && softSurface != null))) playNext();
+    }
+
+    /** Hands the video planes to an input preview: the aerial keeps playing, drawn with the UI. */
+    public void freeze() {
+        if (softMode) return;
+        softMode = true;
+        if (softSurface != null) toSoft();
+    }
+
+    /** Takes the 4K video plane back. */
+    public void unfreeze() {
+        if (!softMode) return;
+        softMode = false;
+        video.setVisibility(VISIBLE);   // surfaceCreated moves the player back onto it
+    }
+
+    private void toSoft() {
+        if (mp != null) {
+            try {
+                mp.setSurface(softSurface);
+            } catch (Exception e) {
+                release();
+            }
+        }
+        leavingPlane = true;
+        video.setVisibility(GONE);      // frees the plane; the player is kept
+        if (mp == null) playNext();
     }
 
     /** Off leaves only the gradient. */
@@ -115,7 +183,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     }
 
     private void playNext() {
-        if (!active || holder == null) return;
+        if (!active || (softMode ? softSurface == null : holder == null)) return;
         boolean uhd = use4k(getContext());
         List<Aerials.Clip> chosen = Aerials.chosen(getContext(), prefs.aerialIds());
         if (chosen.isEmpty()) return;
@@ -135,13 +203,14 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     }
 
     private void play(String source, boolean local) {
-        if (holder == null) return;
+        if (softMode ? softSurface == null : holder == null) return;
         release();
         if (playing != null && playing != this) playing.release();
         playing = this;
         try {
             mp = new MediaPlayer();
-            mp.setDisplay(holder);
+            if (softMode) mp.setSurface(softSurface);
+            else mp.setDisplay(holder);
             mp.setVolume(0f, 0f);
             mp.setDataSource(source);
             mp.setOnPreparedListener(p -> {

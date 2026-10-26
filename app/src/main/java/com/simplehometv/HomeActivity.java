@@ -71,7 +71,6 @@ public class HomeActivity extends Activity {
 
     private FrameLayout root;
     private AerialBackground aerial;
-    private ImageView backA, backB;    // backB fades in over backA, then hands its image down
     private View backShade, scrim;
     private TextView clock, date;
     private ImageView gear;
@@ -102,6 +101,7 @@ public class HomeActivity extends Activity {
     private int gridCols, gridW, gridH, contentW, contentH;
 
     private Mode mode = Mode.HOME;
+    private boolean resumed;
     private Zone zone = Zone.DOCK;
     private int dockFocus, contentFocus, drawerFocus;
     private String spotFor;                     // tile id whose content is on screen
@@ -179,6 +179,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onResume() {
         super.onResume();
+        resumed = true;
         String keep = currentTileId();
         boolean onGear = mode == Mode.HOME && zone == Zone.GEAR;
         pins = new Pins(prefs.pins());
@@ -203,6 +204,7 @@ public class HomeActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
+        resumed = false;
         main.removeCallbacks(tick);
         main.removeCallbacks(holdTimer);
         okKey.reset();
@@ -279,10 +281,6 @@ public class HomeActivity extends Activity {
         aerial = new AerialBackground(this);
         root.addView(aerial, full());
 
-        backA = backdropView();
-        backB = backdropView();
-        root.addView(backA, full());
-        root.addView(backB, full());
         backShade = new View(this);
         backShade.setBackground(new LayerDrawable(new Drawable[]{
                 new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{0xF2050608, 0x99050608, 0x00050608}),
@@ -428,12 +426,6 @@ public class HomeActivity extends Activity {
         setContentView(root);
     }
 
-    private ImageView backdropView() {
-        ImageView v = new ImageView(this);
-        v.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        v.setAlpha(0f);
-        return v;
-    }
 
     private HorizontalScrollView rowScroll() {
         HorizontalScrollView s = new HorizontalScrollView(this);
@@ -627,19 +619,7 @@ public class HomeActivity extends Activity {
         heroTitle.setText(it.title);
         heroSub.setText(it.sub != null ? it.sub : "");
         heroSub.setVisibility(it.sub != null && layout.rows == 1 ? View.VISIBLE : View.GONE);
-        Bitmap ready = ImageCache.peek(it.art, 1280);
-        if (ready != null) {
-            showBackdrop(ready);
-        } else if (it.art != null) {
-            String want = it.art;
-            io.execute(() -> {
-                Bitmap b = ImageCache.load(this, want, 1280);
-                main.post(() -> {
-                    int now = zone == Zone.CONTENT ? contentFocus : 0;
-                    if (b != null && now < contentItems.size() && want.equals(contentItems.get(now).art)) showBackdrop(b);
-                });
-            });
-        }
+        backShade.animate().alpha(0.85f).setDuration(400).start();
     }
 
     private void clearSpot() {
@@ -762,29 +742,8 @@ public class HomeActivity extends Activity {
 
     // ---- backdrop ----
 
-    private void showBackdrop(Bitmap b) {
-        backA.animate().cancel();
-        backB.animate().cancel();
-        if (backA.getAlpha() < 1f) {
-            backA.setImageBitmap(b);
-            backB.setAlpha(0f);
-            backA.animate().alpha(1f).setDuration(450).start();
-        } else {
-            backB.setImageBitmap(b);
-            backB.setAlpha(0f);
-            backB.animate().alpha(1f).setDuration(450).withEndAction(() -> {
-                backA.setImageBitmap(b);
-                backB.setAlpha(0f);
-            }).start();
-        }
-        backShade.animate().alpha(1f).setDuration(450).start();
-    }
-
+    /** Darkens the left and bottom behind the content row so its titles read over the aerial. */
     private void hideBackdrop() {
-        for (ImageView v : new ImageView[]{backA, backB}) {
-            v.animate().cancel();
-            v.animate().alpha(0f).setDuration(300).start();
-        }
         backShade.animate().alpha(0f).setDuration(300).start();
     }
 
@@ -807,11 +766,13 @@ public class HomeActivity extends Activity {
                 tvView.setZOrderMediaOverlay(true);
                 tvView.setCallback(new TvView.TvInputCallback() {
                     @Override public void onVideoAvailable(String inputId) {
+                        Log.i(TAG, "preview video available");
                         main.removeCallbacks(previewTimeout);
                         previewStatus.animate().alpha(0f).setDuration(250).start();
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
+                        Log.i(TAG, "preview size " + w + "x" + h);
                         if (w > 0 && h > 0) {
                             sizePreview(w / (float) h);
                             main.removeCallbacks(previewTimeout);
@@ -820,10 +781,12 @@ public class HomeActivity extends Activity {
                     }
 
                     @Override public void onConnectionFailed(String inputId) {
+                        Log.i(TAG, "preview connection failed");
                         retryPreview();
                     }
 
                     @Override public void onDisconnected(String inputId) {
+                        Log.i(TAG, "preview disconnected");
                         retryPreview();
                     }
                 });
@@ -834,10 +797,12 @@ public class HomeActivity extends Activity {
             previewStatus.setText("");
             previewStatus.animate().cancel();
             previewStatus.setAlpha(1f);
+            aerial.freeze();
             sizePreview(16f / 9f);
             previewFrame.setVisibility(View.VISIBLE);
             previewFrame.setAlpha(0f);
             previewFrame.animate().alpha(1f).setDuration(300).setInterpolator(Ui.EASE).start();
+            Log.i(TAG, "preview tune " + t.inputId);
             tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
             main.removeCallbacks(previewTimeout);
             previewTimeout = () -> {
@@ -892,6 +857,7 @@ public class HomeActivity extends Activity {
         }
         previewFrame.animate().cancel();
         previewFrame.setVisibility(View.GONE);
+        aerial.unfreeze();
     }
 
     // ---- all apps ----
