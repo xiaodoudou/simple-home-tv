@@ -72,7 +72,7 @@ public class HomeActivity extends Activity {
     private FrameLayout root;
     private AerialBackground aerial;
     private ImageView backA, backB;    // backB fades in over backA, then hands its image down
-    private View backShade, glow, scrim;
+    private View backShade, scrim;
     private TextView clock, date;
     private ImageView gear;
     private LinearLayout hero;
@@ -288,9 +288,6 @@ public class HomeActivity extends Activity {
         backShade.setAlpha(0f);
         root.addView(backShade, full());
 
-        glow = new View(this);
-        glow.setAlpha(0f);
-        root.addView(glow, full());
 
         scrim = new View(this);
         scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
@@ -549,7 +546,6 @@ public class HomeActivity extends Activity {
         if (t.kind == Tile.Kind.APP) {
             if (!t.id.equals(spotFor)) clearSpot();
             spotFor = t.id;
-            showGlow(brandColor(t.pkg));
             if (!prefs.spotlight()) return;
             Spot cached = spots.get(t.pkg);
             if (cached != null) {
@@ -562,7 +558,6 @@ public class HomeActivity extends Activity {
         } else {
             spotFor = null;
             clearSpot();
-            hideGlow();
             if (t.kind == Tile.Kind.INPUT && prefs.preview() && !prefs.previewOff(t.inputId)) {
                 pendingPreview = () -> startPreview(t);
                 main.postDelayed(pendingPreview, 450);
@@ -758,7 +753,7 @@ public class HomeActivity extends Activity {
         if (!startSafe(i)) startSafe(app.launch);
     }
 
-    // ---- backdrop and glow ----
+    // ---- backdrop ----
 
     private void showBackdrop(Bitmap b) {
         backA.animate().cancel();
@@ -776,7 +771,6 @@ public class HomeActivity extends Activity {
             }).start();
         }
         backShade.animate().alpha(1f).setDuration(450).start();
-        glow.animate().alpha(0f).setDuration(300).start();
     }
 
     private void hideBackdrop() {
@@ -787,15 +781,6 @@ public class HomeActivity extends Activity {
         backShade.animate().alpha(0f).setDuration(300).start();
     }
 
-    private void showGlow(int color) {
-        glow.setBackground(new GradientDrawable(GradientDrawable.Orientation.BL_TR,
-                new int[]{blend(color, 0xFF000000, 0.25f), blend(color, 0xFF000000, 0.7f) & 0x80FFFFFF, 0x00000000}));
-        glow.animate().alpha(0.55f).setDuration(400).start();
-    }
-
-    private void hideGlow() {
-        glow.animate().alpha(0f).setDuration(300).start();
-    }
 
     // ---- input preview ----
 
@@ -894,7 +879,6 @@ public class HomeActivity extends Activity {
         main.removeCallbacks(pendingSpot);
         spotFor = null;
         clearSpot();
-        hideGlow();
         renderGrid();
         drawerScroll.scrollTo(0, 0);
         for (View v : new View[]{drawerBg, drawerHeader, drawerScroll}) {

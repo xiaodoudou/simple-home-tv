@@ -256,7 +256,7 @@ public class SettingsActivity extends Activity {
         rows.add(new Row("Show", hasAlbum ? null : "Add a Google Photos album to show your photos",
                 prefs.screensaverPhotos() && hasAlbum ? "Google Photos" : "Aerial videos",
                 () -> prefs.setScreensaverPhotos(hasAlbum && !prefs.screensaverPhotos())));
-        rows.add(new Row("Google Photos album", "In Google Photos: open an album, Share, Create link. Then enter that link here",
+        rows.add(new Row("Google Photos album", "Google Photos: open an album, then Share, Create link",
                 hasAlbum ? "Set" : "Not set", this::askAlbum));
         rows.add(new Row("Clock", "Time and date in the corner", onOff(prefs.screensaverClock()),
                 () -> prefs.setScreensaverClock(!prefs.screensaverClock())));
