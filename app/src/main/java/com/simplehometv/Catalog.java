@@ -9,12 +9,18 @@ import android.media.tv.TvInputInfo;
 import android.media.tv.TvInputManager;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 /** Loads the launchable apps and the TV inputs on this device. */
 final class Catalog {
+
+    /** Launcher entries that only open a background service's own settings, not an app. */
+    private static final Set<String> HIDDEN = new HashSet<>(Arrays.asList("com.google.android.tv.remote.service"));
 
     private Catalog() { }
 
@@ -27,7 +33,7 @@ final class Catalog {
             Intent q = new Intent(Intent.ACTION_MAIN).addCategory(cat);
             for (ResolveInfo ri : pm.queryIntentActivities(q, 0)) {
                 String pkg = ri.activityInfo.packageName;
-                if (pkg.equals(c.getPackageName()) || byPkg.containsKey(pkg)) continue;
+                if (pkg.equals(c.getPackageName()) || HIDDEN.contains(pkg) || byPkg.containsKey(pkg)) continue;
                 Intent launch = launchIntent(pm, pkg);
                 if (launch == null) continue;
                 byPkg.put(pkg, Tile.app(pkg, String.valueOf(ri.loadLabel(pm)).trim(), launch));

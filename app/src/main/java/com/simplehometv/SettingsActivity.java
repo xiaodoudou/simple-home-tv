@@ -30,9 +30,9 @@ public class SettingsActivity extends Activity {
     static final String EXTRA_PAGE = "page";
     static final int PAGE_APPS = 4;
 
-    private static final String[] PAGES = {"Home", "Network", "Display & sound", "Inputs", "Apps", "Screensaver", "About"};
+    private static final String[] PAGES = {"Home", "Network", "Display & sound", "Inputs", "Apps", "Screensaver", "About", "Android settings"};
     private static final int[] ICONS = {R.drawable.ic_home, R.drawable.ic_wifi, R.drawable.ic_display, R.drawable.ic_input,
-            R.drawable.ic_apps, R.drawable.ic_moon, R.drawable.ic_info};
+            R.drawable.ic_apps, R.drawable.ic_moon, R.drawable.ic_info, R.drawable.ic_settings};
 
     private static final class Row {
         final String title, sub, value;
@@ -163,7 +163,8 @@ public class SettingsActivity extends Activity {
             case 3: inputRows(); break;
             case 4: appRows(); break;
             case 5: screensaverRows(); break;
-            default: aboutRows();
+            case 6: aboutRows(); break;
+            default: androidRows();
         }
         rowBox.removeAllViews();
         rowViews.clear();
@@ -261,7 +262,15 @@ public class SettingsActivity extends Activity {
         rows.add(new Row("Simple Home", "A clean home screen for Android TV", version, null));
         rows.add(new Row("Device", Build.MANUFACTURER + " " + Build.MODEL, "Android " + Build.VERSION.RELEASE, null));
         rows.add(new Row("Device info", null, null, () -> open(Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)));
-        rows.add(new Row("All Android settings", null, null, () -> open(Settings.ACTION_SETTINGS, null)));
+    }
+
+    private void androidRows() {
+        rows.add(new Row("Open Android settings", "The TV's own settings: picture, sound, network, accounts and more",
+                null, this::openAndroidSettings));
+    }
+
+    private void openAndroidSettings() {
+        open(Settings.ACTION_SETTINGS, null);
     }
 
     private View rowView(Row r) {
@@ -387,6 +396,10 @@ public class SettingsActivity extends Activity {
     }
 
     private void select() {
+        if (!inRows && page == PAGES.length - 1) {
+            openAndroidSettings();
+            return;
+        }
         if (!inRows) {
             focusRow(firstActionable());
             return;
