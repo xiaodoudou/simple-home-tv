@@ -25,6 +25,7 @@ import android.graphics.Outline;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewOutlineProvider;
+import android.view.ViewTreeObserver;
 import android.widget.FrameLayout;
 import android.widget.HorizontalScrollView;
 import android.widget.ImageView;
@@ -53,7 +54,7 @@ public class HomeActivity extends Activity {
 
     private static final String TAG = "Home";
 
-    private enum Mode { HOME, DRAWER, MENU }
+    private enum Mode { HOME, DRAWER, MENU, MOVE }
     private enum Zone { DOCK, CONTENT, GEAR }
 
     // Layout, in dp. The gutters keep everything clear of TV overscan (up to 5% per edge).
@@ -117,6 +118,9 @@ public class HomeActivity extends Activity {
     private final List<MenuItem> menuItems = new ArrayList<>();
     private final List<View> menuViews = new ArrayList<>();
     private int menuFocus;
+    private String movingId;                    // tile picked up with Move
+    private Map<String, float[]> glideFrom;     // where dock tiles were drawn before a re-render
+    private final List<View> moveArrows = new ArrayList<>();
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newFixedThreadPool(3);
@@ -189,6 +193,9 @@ public class HomeActivity extends Activity {
         if (mode == Mode.MENU) closeMenu();
         if (mode == Mode.DRAWER) resetDrawer();
         mode = Mode.HOME;
+        movingId = null;
+        glideFrom = null;
+        moveArrows.clear();
         renderDock();
         preloadSpots();
         Tile warm = warmCandidate();
@@ -234,6 +241,7 @@ public class HomeActivity extends Activity {
     /** Home pressed while already home: back to the dock's first tile. */
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (mode == Mode.MOVE) endMove();
         if (mode == Mode.MENU) closeMenu();
         if (mode == Mode.DRAWER) closeDrawer();
         else focusDock(0);
@@ -387,7 +395,7 @@ public class HomeActivity extends Activity {
         dt.setText(R.string.all_apps);
         drawerHeader.addView(dt, new LinearLayout.LayoutParams(0, -2, 1));
         TextView hint = Ui.text(this, Ui.regular(), 14, Ui.TEXT_FAINT);
-        hint.setText("Hold OK to pin, move or remove");
+        hint.setText("Hold OK to add to your home");
         drawerHeader.addView(hint);
         FrameLayout.LayoutParams hdl = new FrameLayout.LayoutParams(-1, px(HEADER - 12), Gravity.TOP);
         hdl.leftMargin = px(GUTTER);
@@ -1084,13 +1092,17 @@ public class HomeActivity extends Activity {
     }
 
     private void closeDrawer() {
+        closeDrawer(dockTiles.size() - 1);
+    }
+
+    private void closeDrawer(int focus) {
         mode = Mode.HOME;
         drawerBg.animate().alpha(0f).setDuration(300).withEndAction(() -> drawerBg.setVisibility(View.GONE)).start();
         drawerHeader.animate().alpha(0f).setStartDelay(0).setDuration(140).withEndAction(() -> drawerHeader.setVisibility(View.GONE)).start();
         drawerScroll.animate().alpha(0f).setDuration(160).withEndAction(() -> drawerScroll.setVisibility(View.GONE)).start();
         for (View v : new View[]{clock, date, gear}) v.animate().alpha(1f).setDuration(260).start();
         dockScroll.animate().translationY(0).setDuration(420).setInterpolator(Ui.EASE).start();
-        focusDock(dockTiles.size() - 1);
+        focusDock(focus);
     }
 
     /** Leaves the drawer instantly (when returning to the home from elsewhere). */
@@ -1177,20 +1189,6 @@ public class HomeActivity extends Activity {
         }
     }
 
-    /** Re-renders the bar and grid after a pin change, keeping focus on {@code keepId}. */
-    private void refreshDrawer(String keepId) {
-        renderDock();
-        renderGrid();
-        dockScroll.animate().cancel();
-        dockScroll.setTranslationY(liftedDockY());
-        int i = indexOf(dockTiles, keepId);
-        if (i < 0) {
-            int g = indexOf(gridTiles, keepId);
-            i = g >= 0 ? dockTiles.size() + g : dockTiles.size();
-        }
-        focusDrawer(i);
-    }
-
     private Tile drawerTile(int i) {
         return i < dockTiles.size() ? dockTiles.get(i) : gridTiles.get(i - dockTiles.size());
     }
@@ -1244,9 +1242,17 @@ public class HomeActivity extends Activity {
             if (dy != 0) focusMenu(menuFocus + dy);
             return;
         }
+        if (mode == Mode.MOVE) {
+            if (dx != 0) moveBy(dx);
+            else if (layout.rows > 1) moveBy(dy * layout.cols);
+            return;
+        }
         if (mode == Mode.DRAWER) {
             int to = drawerNav().move(drawerFocus, dx, dy);
-            if (to != GridNav.OUT_TOP) focusDrawer(to);
+            if (to == GridNav.OUT_TOP) return;
+            // The bar is the home's own row: going back up to it goes home.
+            if (to < dockTiles.size() && to != drawerFocus) closeDrawer(to);
+            else focusDrawer(to);
             return;
         }
         switch (zone) {
@@ -1275,6 +1281,10 @@ public class HomeActivity extends Activity {
     }
 
     private void onSelect() {
+        if (mode == Mode.MOVE) {
+            endMove();
+            return;
+        }
         if (mode == Mode.MENU) {
             if (menuFocus >= menuItems.size()) return;
             MenuItem m = menuItems.get(menuFocus);
@@ -1307,6 +1317,10 @@ public class HomeActivity extends Activity {
     }
 
     private void onHold() {
+        if (mode == Mode.MOVE) {
+            endMove();
+            return;
+        }
         if (mode == Mode.MENU) return;
         if (mode == Mode.HOME && zone != Zone.DOCK) return;
         Tile t = mode == Mode.HOME ? dockTiles.get(dockFocus) : drawerTile(drawerFocus);
@@ -1314,7 +1328,8 @@ public class HomeActivity extends Activity {
     }
 
     private void onBack() {
-        if (mode == Mode.MENU) closeMenu();
+        if (mode == Mode.MOVE) endMove();
+        else if (mode == Mode.MENU) closeMenu();
         else if (mode == Mode.DRAWER) closeDrawer();
         else if (zone != Zone.DOCK) focusDock(dockFocus);
     }
@@ -1330,13 +1345,7 @@ public class HomeActivity extends Activity {
             afterPinChange(t.id);
         });
         if (!pinned) items.add(toggle);
-        int at = indexOf(dockTiles, t.id);
-        if (pinned && at > 0) {
-            items.add(new MenuItem("Move left", null, false, true, () -> movePin(t, -1)));
-        }
-        if (pinned && at >= 0 && at < dockTiles.size() - 2) {
-            items.add(new MenuItem("Move right", null, false, true, () -> movePin(t, 1)));
-        }
+        if (pinned && dockTiles.size() > 2) items.add(new MenuItem("Move", null, false, false, () -> startMove(t)));
         if (t.kind == Tile.Kind.APP) {
             List<Content.Source> known = sourcesByPkg.get(t.pkg);
             if (known != null && !known.isEmpty()) {
@@ -1396,25 +1405,14 @@ public class HomeActivity extends Activity {
         openMenu(t, items);
     }
 
-    private void movePin(Tile t, int delta) {
-        if (!pins.move(t.id, delta, this::present)) return;
-        savePins();
-        Mode back = menuReturn;
-        if (back == Mode.DRAWER) refreshDrawer(t.id);
-        else {
-            renderDock();
-            dockFocus = indexOf(dockTiles, t.id);
-            for (int k = 0; k < dockViews.size(); k++) setFocused(dockViews.get(k), k == dockFocus, true);
-        }
-        int keep = menuFocus;
-        openTileMenu(t);
-        menuReturn = back;
-        focusMenu(Math.min(keep, menuViews.size() - 1));
-    }
-
     private void afterPinChange(String id) {
         if (menuReturn == Mode.DRAWER) {
-            refreshDrawer(id);
+            // Added from All apps: it now sits in the bar, which is the home's row, so go home onto it.
+            renderDock();
+            dockScroll.animate().cancel();
+            dockScroll.setTranslationY(liftedDockY());
+            int at = indexOf(dockTiles, id);
+            closeDrawer(at >= 0 ? at : dockTiles.size() - 1);
         } else {
             renderDock();
             focusDock(Math.max(0, Math.min(dockFocus, dockTiles.size() - 1)));
@@ -1520,6 +1518,122 @@ public class HomeActivity extends Activity {
             return (f & (ApplicationInfo.FLAG_SYSTEM | ApplicationInfo.FLAG_UPDATED_SYSTEM_APP)) == 0;
         } catch (Exception e) {
             return false;
+        }
+    }
+
+    // ---- moving a tile ----
+    //
+    // Move picks the tile up: it follows left and right (and up and down on two rows) until OK or Back puts it
+    // down. Each step re-renders the dock, then every tile glides from where it was drawn to its new place.
+
+    private static final float MOVE_DIM = 0.4f;
+
+    private void startMove(Tile t) {
+        int at = indexOf(dockTiles, t.id);
+        if (at < 0) return;
+        mode = Mode.MOVE;
+        movingId = t.id;
+        main.removeCallbacks(pendingSpot);
+        main.removeCallbacks(pendingPreview);
+        stopPreview();
+        spotToken++;
+        spotFor = null;
+        fadeOutSpot();
+        dockFocus = at;
+        for (int k = 0; k < dockViews.size(); k++) {
+            setFocused(dockViews.get(k), k == at, true);
+            dockViews.get(k).animate().alpha(k == at ? 1f : MOVE_DIM).setDuration(200).start();
+        }
+        addArrows(true);
+    }
+
+    private void moveBy(int steps) {
+        int from = indexOf(dockTiles, movingId);
+        int to = Math.max(0, Math.min(dockTiles.size() - 2, from + steps));     // All apps stays last
+        if (from < 0 || to == from) return;
+        if (glideFrom == null) {
+            glideFrom = dockPositions();
+            dockBox.getViewTreeObserver().addOnPreDrawListener(glide);
+        }
+        int step = to > from ? 1 : -1;
+        for (int i = from; i != to; i += step) pins.move(movingId, step, this::present);
+        savePins();
+        renderDock();
+        dockFocus = indexOf(dockTiles, movingId);
+        for (int k = 0; k < dockViews.size(); k++) {
+            setFocused(dockViews.get(k), k == dockFocus, true);
+            dockViews.get(k).setAlpha(k == dockFocus ? 1f : MOVE_DIM);
+        }
+        addArrows(false);
+        scrollIntoView(dockScroll, dockViews.get(dockFocus));
+    }
+
+    private void endMove() {
+        mode = Mode.HOME;
+        movingId = null;
+        for (View a : moveArrows) {
+            a.animate().alpha(0f).setDuration(160).withEndAction(() -> {
+                if (a.getParent() instanceof ViewGroup) ((ViewGroup) a.getParent()).removeView(a);
+            }).start();
+        }
+        moveArrows.clear();
+        for (View v : dockViews) v.animate().alpha(1f).setDuration(200).start();
+        focusDock(dockFocus);
+    }
+
+    /** Where each dock tile is drawn now, by id, counting any glide still under way. */
+    private Map<String, float[]> dockPositions() {
+        Map<String, float[]> at = new HashMap<>();
+        for (int k = 0; k < dockViews.size(); k++) {
+            View v = dockViews.get(k), row = (View) v.getParent();
+            at.put(dockTiles.get(k).id, new float[]{row.getLeft() + v.getLeft() + v.getTranslationX(),
+                    row.getTop() + v.getTop() + v.getTranslationY()});
+        }
+        return at;
+    }
+
+    /** Runs once the re-rendered dock is laid out and before it is drawn, so tiles start where they were. */
+    private final ViewTreeObserver.OnPreDrawListener glide = new ViewTreeObserver.OnPreDrawListener() {
+        @Override public boolean onPreDraw() {
+            dockBox.getViewTreeObserver().removeOnPreDrawListener(this);
+            Map<String, float[]> from = glideFrom;
+            glideFrom = null;
+            if (from == null) return true;
+            for (int k = 0; k < dockViews.size(); k++) {
+                float[] was = from.get(dockTiles.get(k).id);
+                if (was == null) continue;
+                View v = dockViews.get(k), row = (View) v.getParent();
+                v.setTranslationX(was[0] - row.getLeft() - v.getLeft());
+                v.setTranslationY(was[1] - row.getTop() - v.getTop());
+                v.animate().translationX(0).translationY(0).setDuration(200).setInterpolator(Ui.EASE).start();
+            }
+            return true;
+        }
+    };
+
+    /** Chevrons on the moving tile, on the sides it can still go. */
+    private void addArrows(boolean fadeIn) {
+        moveArrows.clear();
+        FrameLayout tile = (FrameLayout) dockViews.get(dockFocus);
+        int size = layout.tileH < 60 ? 18 : 22;
+        for (int side = -1; side <= 1; side += 2) {
+            ImageView a = new ImageView(this);
+            a.setImageResource(R.drawable.ic_chevron);
+            a.setColorFilter(0xFF111317);
+            a.setBackground(Ui.circle(0xF2FFFFFF));
+            a.setPadding(px(3), px(3), px(3), px(3));
+            a.setRotation(side < 0 ? 180f : 0f);
+            boolean can = side < 0 ? dockFocus > 0 : dockFocus < dockTiles.size() - 2;
+            a.setVisibility(can ? View.VISIBLE : View.INVISIBLE);
+            FrameLayout.LayoutParams l = new FrameLayout.LayoutParams(px(size), px(size),
+                    Gravity.CENTER_VERTICAL | (side < 0 ? Gravity.START : Gravity.END));
+            l.leftMargin = l.rightMargin = px(size / 4);
+            tile.addView(a, l);
+            if (fadeIn) {
+                a.setAlpha(0f);
+                a.animate().alpha(1f).setDuration(200).start();
+            }
+            moveArrows.add(a);
         }
     }
 
