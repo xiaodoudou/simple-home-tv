@@ -8,17 +8,31 @@ android {
         applicationId 'com.simplehometv'
         minSdk 24
         targetSdk 35
-        versionCode 2
-        versionName '0.2'
+        versionCode 5
+        versionName '0.3.0'
     }
 
     buildFeatures {
         buildConfig true
     }
 
+    // Release builds are signed only where the key is given (the release workflow, from repository secrets).
+    def keystore = System.getenv('SIGNING_KEYSTORE')
+    signingConfigs {
+        if (keystore) {
+            release {
+                storeFile file(keystore)
+                storePassword System.getenv('SIGNING_STORE_PASSWORD')
+                keyAlias System.getenv('SIGNING_KEY_ALIAS')
+                keyPassword System.getenv('SIGNING_KEY_PASSWORD')
+            }
+        }
+    }
+
     buildTypes {
         release {
             minifyEnabled false
+            if (keystore) signingConfig signingConfigs.release
         }
     }
 
@@ -29,6 +43,11 @@ android {
 
     testOptions {
         unitTests.returnDefaultValues = true
+    }
+
+    lint {
+        // local.properties is written per machine and never committed
+        disable 'PropertyEscape'
     }
 }
 

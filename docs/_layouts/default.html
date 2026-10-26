@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% if page.title and page.title != site.title %}{{ page.title }} | {% endif %}{{ site.title }}</title>
+  <meta name="description" content="{{ page.description | default: site.description }}">
+  <meta property="og:title" content="{{ page.title | default: site.title }}">
+  <meta property="og:description" content="{{ page.description | default: site.description }}">
+  <meta property="og:image" content="{{ '/assets/screenshots/home.jpg' | absolute_url }}">
+  <link rel="icon" href="{{ '/assets/logo-120.png' | relative_url }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600&display=swap">
+  <link rel="stylesheet" href="{{ '/assets/style.css' | relative_url }}">
+</head>
+<body class="{{ page.body_class | default: 'doc' }}">
+  <header class="top">
+    <a class="brand" href="{{ '/' | relative_url }}"><img src="{{ '/assets/logo-120.png' | relative_url }}" alt=""> Simple Home TV</a>
+    <nav>
+      <a href="{{ '/privacy' | relative_url }}">Privacy</a>
+      <a class="gh" href="{{ site.repo }}">GitHub</a>
+    </nav>
+  </header>
+  <main>
+    {% if page.body_class == 'home' %}{{ content }}{% else %}<article class="prose">{{ content }}</article>{% endif %}
+  </main>
+  <footer>
+    <span>Simple Home TV, free and open source under the MIT License.</span>
+    <span><a href="{{ '/privacy' | relative_url }}">Privacy</a><a href="{{ '/terms' | relative_url }}">Terms</a><a href="{{ site.repo }}">Source</a></span>
+  </footer>
+</body>
+</html>

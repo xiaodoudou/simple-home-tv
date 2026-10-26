@@ -1,0 +1,80 @@
+name: Release
+
+# Pushing a version tag (v0.3.0, v0.4.0-rc.1...) runs CI, then builds the signed release APK and creates the GitHub
+# release with it. A step that fails stops the ones after it: nothing is released from a red build.
+#
+# One-time setup, under Settings > Secrets and variables > Actions:
+#   SIGNING_KEYSTORE_BASE64  the release keystore, base64-encoded
+#   SIGNING_STORE_PASSWORD, SIGNING_KEY_ALIAS, SIGNING_KEY_PASSWORD
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  # a tag that does not name versionName of app/build.gradle, or that is not on main, is not a release
+  check:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - id: version
+        run: |
+          version=$(sed -n "s/^ *versionName '\(.*\)'/\1/p" app/build.gradle)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::the tag $GITHUB_REF_NAME does not name versionName of app/build.gradle ($version)"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::the tag $GITHUB_REF_NAME is not on the main branch"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;; *) echo "prerelease=false" >> "$GITHUB_OUTPUT" ;; esac
+
+  ci:
+    needs: check
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: [check, ci]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+      - name: Signed release APK
+        env:
+          SIGNING_KEYSTORE_BASE64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          if [ -z "$SIGNING_KEYSTORE_BASE64" ]; then
+            echo "::error::the SIGNING_* secrets are not set"
+            exit 1
+          fi
+          export SIGNING_KEYSTORE="$RUNNER_TEMP/release.jks"
+          echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$SIGNING_KEYSTORE"
+          ./gradlew --no-daemon assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "simple-home-tv-${{ needs.check.outputs.version }}.apk"
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          flags="--generate-notes --verify-tag"
+          [ "${{ needs.check.outputs.prerelease }}" = "true" ] && flags="$flags --prerelease"
+          gh release create "$GITHUB_REF_NAME" "simple-home-tv-${{ needs.check.outputs.version }}.apk" \
+            --title "Simple Home TV ${{ needs.check.outputs.version }}" $flags

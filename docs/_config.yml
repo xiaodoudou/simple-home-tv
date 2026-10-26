@@ -1,0 +1,10 @@
+title: Simple Home TV
+description: A calm home screen for Android TV. Works without Google Play.
+repo: https://github.com/xiaodoudou/simple-home-tv
+exclude:
+  - assets/screenshots/*.png
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
