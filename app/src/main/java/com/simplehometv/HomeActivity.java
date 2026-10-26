@@ -1058,6 +1058,11 @@ public class HomeActivity extends Activity {
     // ---- all apps ----
 
     private void openDrawer() {
+        openDrawer(-1);
+    }
+
+    /** {@code from}: the dock tile Down was pressed on, to land on the app below it; -1 lands on the first app. */
+    private void openDrawer(int from) {
         mode = Mode.DRAWER;
         stopPreview();
         main.removeCallbacks(pendingSpot);
@@ -1081,7 +1086,27 @@ public class HomeActivity extends Activity {
             row.animate().alpha(1f).translationY(0).setStartDelay(120 + 40L * Math.min(r, 8))
                     .setDuration(420).setInterpolator(Ui.EASE).start();
         }
-        focusDrawer(gridTiles.isEmpty() ? dockTiles.size() - 1 : dockTiles.size());
+        focusDrawer(gridTiles.isEmpty() ? dockTiles.size() - 1 : from >= 0 ? gridTileBelow(from) : dockTiles.size());
+    }
+
+    // The bar and the grid size their tiles differently, so moving between them goes by position, not column number.
+
+    /** The first-row app nearest below dock tile {@code i}. */
+    private int gridTileBelow(int i) {
+        float x = i % layout.cols * (layout.tileW + DockLayout.GAP) + layout.tileW / 2f - dockScroll.getScrollX() / dp;
+        return dockTiles.size() + Math.min(nearestCol(x, gridW, gridCols), gridTiles.size() - 1);
+    }
+
+    /** The tile in the bar's last row nearest above grid column {@code g}. */
+    private int barTileAbove(int g) {
+        int last = (dockTiles.size() - 1) / layout.cols * layout.cols;
+        float x = g * (gridW + DockLayout.GAP) + gridW / 2f + dockScroll.getScrollX() / dp;
+        return last + nearestCol(x, layout.tileW, dockTiles.size() - last);
+    }
+
+    /** The column, of {@code cols} tiles {@code w} dp wide, whose centre is nearest {@code x} dp. */
+    private static int nearestCol(float x, int w, int cols) {
+        return Math.max(0, Math.min(cols - 1, Math.round((x - w / 2f) / (w + DockLayout.GAP))));
     }
 
     /** How far the dock moves up to become the drawer's bar, in px (negative). */
@@ -1226,16 +1251,18 @@ public class HomeActivity extends Activity {
             return true;
         }
         if (!down) return super.dispatchKeyEvent(e);
+        boolean repeat = e.getRepeatCount() > 0;
         switch (k) {
-            case KeyEvent.KEYCODE_DPAD_LEFT: nav(-1, 0); return true;
-            case KeyEvent.KEYCODE_DPAD_RIGHT: nav(1, 0); return true;
-            case KeyEvent.KEYCODE_DPAD_UP: nav(0, -1); return true;
-            case KeyEvent.KEYCODE_DPAD_DOWN: nav(0, 1); return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT: nav(-1, 0, repeat); return true;
+            case KeyEvent.KEYCODE_DPAD_RIGHT: nav(1, 0, repeat); return true;
+            case KeyEvent.KEYCODE_DPAD_UP: nav(0, -1, repeat); return true;
+            case KeyEvent.KEYCODE_DPAD_DOWN: nav(0, 1, repeat); return true;
             default: return super.dispatchKeyEvent(e);
         }
     }
 
-    private void nav(int dx, int dy) {
+    /** {@code repeat}: the key is held. A held key never opens or closes All apps, it stops at the edge. */
+    private void nav(int dx, int dy, boolean repeat) {
         if (okKey.pressing()) okKey.reset();
         main.removeCallbacks(holdTimer);
         if (mode == Mode.MENU) {
@@ -1248,11 +1275,19 @@ public class HomeActivity extends Activity {
             return;
         }
         if (mode == Mode.DRAWER) {
+            int bar = dockTiles.size(), g = drawerFocus - bar;
+            // The bar is the home's own row: going back up to it goes home.
+            if (dy < 0 && g >= 0 && g < gridCols) {
+                if (!repeat) closeDrawer(barTileAbove(g));
+                return;
+            }
             int to = drawerNav().move(drawerFocus, dx, dy);
             if (to == GridNav.OUT_TOP) return;
-            // The bar is the home's own row: going back up to it goes home.
-            if (to < dockTiles.size() && to != drawerFocus) closeDrawer(to);
-            else focusDrawer(to);
+            if (to < bar && to != drawerFocus) {
+                if (!repeat) closeDrawer(to);
+            } else {
+                focusDrawer(to);
+            }
             return;
         }
         switch (zone) {
@@ -1276,6 +1311,8 @@ public class HomeActivity extends Activity {
                     else focusGear();
                 } else if (to != dockFocus) {
                     focusDock(to);
+                } else if (dy > 0 && !repeat) {
+                    openDrawer(dockFocus);
                 }
         }
     }
