@@ -261,18 +261,24 @@ public class SettingsActivity extends Activity {
     private void appRows() {
         rows.add(new Row("Manage apps", "Storage, permissions, uninstall", null,
                 () -> open(Settings.ACTION_APPLICATION_SETTINGS, Settings.ACTION_SETTINGS)));
-        String store = Suggestions.store(this);
-        boolean play = Suggestions.PLAY.equals(store);
-        rows.add(new Row("App store", store == null ? "Install APKUpdater to get apps without Google Play" : null,
-                store == null ? "None" : play ? "Google Play" : "APKUpdater",
-                store == null ? null : () -> launch(store)));
+        List<String> stores = Suggestions.stores(this);
+        String store = Suggestions.store(this, prefs.store());
+        if (store == null) {
+            rows.add(new Row("App store", "Install APKUpdater to get apps without Google Play", "None", null));
+        } else if (stores.size() > 1) {
+            rows.add(new Row("App store", "Used by Get below. Select to switch", Suggestions.storeName(store),
+                    () -> prefs.setStore(stores.get((stores.indexOf(store) + 1) % stores.size()))));
+        } else {
+            rows.add(new Row("App store", "Used by Get below", Suggestions.storeName(store), () -> launch(store)));
+        }
         for (Suggestions.App a : Suggestions.list(this)) {
             if (Suggestions.installed(this, a.pkg)) {
                 rows.add(new Row(a.name, a.why, "Installed", () -> launch(a.pkg)));
             } else if (store != null && a.site == null) {
-                // APKUpdater cannot open an app's page, only itself.
-                rows.add(new Row(a.name, play ? a.why : a.why + ". Search for it in APKUpdater", "Get",
-                        play ? () -> startSafe(Suggestions.storeIntent(store, a.pkg)) : () -> launch(store)));
+                // A store without market:// links (APKUpdater) can only open on its own search.
+                Intent page = Suggestions.pageIntent(this, store, a.pkg);
+                rows.add(new Row(a.name, page != null ? a.why : a.why + ". Search for it in " + Suggestions.storeName(store),
+                        "Get", page != null ? () -> startSafe(page) : () -> launch(store)));
             } else if (a.site != null) {
                 rows.add(new Row(a.name, a.why + ". Get it from " + a.site, null, null));
             } else {

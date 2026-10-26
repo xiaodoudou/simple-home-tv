@@ -18,6 +18,11 @@ final class Suggestions {
     static final String PLAY = "com.android.vending";
     static final String APKUPDATER = "com.apkupdater.ci";
 
+    /** The stores Settings can pick from, by package, with their names, in the order tried when none is picked. */
+    private static final String[][] STORES = {
+            {PLAY, "Google Play"}, {APKUPDATER, "APKUpdater"}, {"com.apkupdater", "APKUpdater"},
+            {"com.aurora.store", "Aurora Store"}};
+
     static final class App {
         final String pkg, name, why, site;   // site: where to get it when no store carries it
 
@@ -35,11 +40,23 @@ final class Suggestions {
         return installed(c, PLAY);
     }
 
-    /** The installed app store, or null when there is none. Only Google Play opens market:// links. */
-    static String store(Context c) {
-        if (hasPlay(c)) return PLAY;
-        if (installed(c, APKUPDATER)) return APKUPDATER;
-        return null;
+    /** The installed stores, as packages. */
+    static List<String> stores(Context c) {
+        List<String> out = new ArrayList<>();
+        for (String[] s : STORES) if (installed(c, s[0])) out.add(s[0]);
+        return out;
+    }
+
+    /** The store {@code picked} in Settings when it is still installed, else the first installed one, else null. */
+    static String store(Context c, String picked) {
+        List<String> all = stores(c);
+        if (picked != null && all.contains(picked)) return picked;
+        return all.isEmpty() ? null : all.get(0);
+    }
+
+    static String storeName(String pkg) {
+        for (String[] s : STORES) if (s[0].equals(pkg)) return s[1];
+        return pkg;
     }
 
     static List<App> list(Context c) {
@@ -68,10 +85,11 @@ final class Suggestions {
         }
     }
 
-    /** Opens the store page for {@code pkg} in the given store. */
-    static Intent storeIntent(String store, String pkg) {
-        return new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg))
+    /** The store's page for {@code pkg} when the store opens market:// links, else null. */
+    static Intent pageIntent(Context c, String store, String pkg) {
+        Intent page = new Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=" + pkg))
                 .setPackage(store)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        return c.getPackageManager().queryIntentActivities(page, 0).isEmpty() ? null : page;
     }
 }
