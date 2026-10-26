@@ -31,8 +31,9 @@ public final class Tile {
         return new Tile("app:" + pkg, label, Kind.APP, pkg, null, launch, false, false);
     }
 
-    public static Tile input(String inputId, String label, Intent launch, boolean connected, boolean on) {
-        return new Tile("input:" + inputId, label, Kind.INPUT, null, inputId, launch, connected, on);
+    /** {@code tuneId} is what opens the picture: the port itself, or the CEC device plugged into it. */
+    public static Tile input(String portId, String tuneId, String label, Intent launch, boolean connected, boolean on) {
+        return new Tile("input:" + portId, label, Kind.INPUT, null, tuneId, launch, connected, on);
     }
 
     public static Tile allApps() {

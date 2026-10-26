@@ -173,6 +173,11 @@ public class HomeActivity extends Activity {
     @Override
     protected void onCreate(Bundle b) {
         super.onCreate(b);
+        // Other apps' rows need it from Android 10; some TVs grant it at install, others leave it to the app.
+        String listings = "android.permission.READ_TV_LISTINGS";
+        if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(listings) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{listings}, 1);
+        }
         Ui.init(this);
         dp = getResources().getDisplayMetrics().density;
         screenWdp = Math.round(getResources().getDisplayMetrics().widthPixels / dp);
@@ -343,6 +348,15 @@ public class HomeActivity extends Activity {
         dl.leftMargin = px(GUTTER);
         dl.topMargin = px(TOP + 58);
         root.addView(date, dl);
+
+        android.widget.ProgressBar spinner = new android.widget.ProgressBar(this);
+        spinner.setIndeterminateTintList(android.content.res.ColorStateList.valueOf(0xB3F5F5F7));
+        spinner.setAlpha(0f);
+        FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(px(18), px(18), Gravity.TOP | Gravity.START);
+        sl.leftMargin = px(GUTTER);
+        sl.topMargin = px(TOP + 90);
+        root.addView(spinner, sl);
+        aerial.setOnLoading(on -> spinner.animate().alpha(on ? 1f : 0f).setDuration(300).start());
 
         gear = new ImageView(this);
         gear.setImageResource(R.drawable.ic_settings);
@@ -1812,12 +1826,16 @@ public class HomeActivity extends Activity {
         }
     }
 
-    /** Switches to an input; TVs that refuse the passthrough deep link get their TV app opened instead. */
+    /**
+     * Switches to an input; TVs that refuse the passthrough deep link get their TV app opened instead, and with no
+     * TV app either, the input plays full screen here.
+     */
     private void openInput(Tile t) {
         if (startSafe(t.launch)) return;
-        startSafe(new Intent(Intent.ACTION_VIEW)
+        if (startSafe(new Intent(Intent.ACTION_VIEW)
                 .setDataAndType(TvContract.Channels.CONTENT_URI, "vnd.android.cursor.dir/channel")
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) return;
+        startSafe(InputActivity.intent(this, t.inputId));
     }
 
     // ---- tiles ----

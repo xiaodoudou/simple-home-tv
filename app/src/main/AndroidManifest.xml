@@ -60,6 +60,13 @@
             </intent-filter>
         </service>
 
+        <activity
+            android:name=".InputActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:screenOrientation="landscape"
+            android:configChanges="keyboard|keyboardHidden|navigation|screenSize|screenLayout|orientation|uiMode|density" />
+
         <service
             android:name=".HomeButton"
             android:exported="true"

@@ -58,9 +58,13 @@ final class Catalog {
         if (tim == null) return out;
         List<TvInputInfo> hdmi = new ArrayList<>();
         List<TvInputInfo> av = new ArrayList<>();
+        java.util.Map<String, TvInputInfo> plugged = new java.util.HashMap<>();   // port -> the CEC device on it
         try {
             for (TvInputInfo i : tim.getTvInputList()) {
-                if (i.getParentId() != null) continue;
+                if (i.getParentId() != null) {
+                    plugged.put(i.getParentId(), i);
+                    continue;
+                }
                 switch (i.getType()) {
                     case TvInputInfo.TYPE_HDMI:
                         hdmi.add(i);
@@ -81,19 +85,33 @@ final class Catalog {
         }
         hdmi.sort((a, b) -> label(c, a).compareTo(label(c, b)));
         int n = 1;
-        for (TvInputInfo i : hdmi) out.add(inputTile(c, tim, i, friendly(c, i, "HDMI " + n++)));
+        boolean viaDevice = !tvAppTakesPassthrough(c);
+        for (TvInputInfo i : hdmi) {
+            TvInputInfo device = plugged.get(i.getId());
+            out.add(inputTile(c, tim, i, viaDevice && device != null ? device : i, named(c, i, device, "HDMI " + n++)));
+        }
         n = 1;
-        for (TvInputInfo i : av) out.add(inputTile(c, tim, i, av.size() == 1 ? "AV" : friendly(c, i, "AV " + n++)));
+        for (TvInputInfo i : av) out.add(inputTile(c, tim, i, i, av.size() == 1 ? "AV" : friendly(c, i, "AV " + n++)));
         return out;
     }
 
-    private static Tile inputTile(Context c, TvInputManager tim, TvInputInfo i, String label) {
+    private static Tile inputTile(Context c, TvInputManager tim, TvInputInfo port, TvInputInfo tune, String label) {
         Intent view = new Intent(Intent.ACTION_VIEW)
-                .setDataAndType(TvContract.buildChannelUriForPassthroughInput(i.getId()), "vnd.android.cursor.item/channel")
+                .setDataAndType(TvContract.buildChannelUriForPassthroughInput(tune.getId()), "vnd.android.cursor.item/channel")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        int state = state(tim, i.getId());
-        return Tile.input(i.getId(), label, view, state != TvInputManager.INPUT_STATE_DISCONNECTED,
+        int state = state(tim, port.getId());
+        return Tile.input(port.getId(), tune.getId(), label, view, state != TvInputManager.INPUT_STATE_DISCONNECTED,
                 state == TvInputManager.INPUT_STATE_CONNECTED);
+    }
+
+    /**
+     * Whether the TV has an app that opens inputs. Without one (Xiaomi), the home plays inputs itself and tunes the
+     * CEC device rather than its port: tuning a port only selects the port, the device behind it stays asleep.
+     */
+    static boolean tvAppTakesPassthrough(Context c) {
+        Intent view = new Intent(Intent.ACTION_VIEW).setDataAndType(
+                TvContract.buildChannelUriForPassthroughInput("x"), "vnd.android.cursor.item/channel");
+        return c.getPackageManager().resolveActivity(view, 0) != null;
     }
 
     static int state(TvInputManager tim, String inputId) {
@@ -107,6 +125,34 @@ final class Catalog {
     private static String label(Context c, TvInputInfo i) {
         CharSequence l = i.loadLabel(c);
         return l == null ? "" : l.toString();
+    }
+
+    /** The name given to the port in the TV's settings, else the device plugged into it, else a friendly name. */
+    private static String named(Context c, TvInputInfo port, TvInputInfo device, String fallback) {
+        CharSequence custom = port.loadCustomLabel(c);
+        if (custom != null && custom.toString().trim().length() > 0) return custom.toString().trim();
+        if (device != null) {
+            String d = cecName(device);
+            if (d.isEmpty()) {
+                CharSequence l = device.loadCustomLabel(c);
+                d = l != null && l.toString().trim().length() > 0 ? l.toString().trim() : label(c, device).trim();
+            }
+            // Without a name, CEC devices are labelled by type: "Playback_3".
+            if (!d.isEmpty() && !d.contains("/") && !d.matches("(?i)(playback|recorder|tuner|audio ?system|tv|reserved)[_ ]?[0-9]*"))
+                return d;
+        }
+        return friendly(c, port, fallback);
+    }
+
+    /** The name a CEC device gives itself ("SHIELD"), from a system API: empty where the TV doesn't allow it. */
+    private static String cecName(TvInputInfo device) {
+        try {
+            Object info = TvInputInfo.class.getMethod("getHdmiDeviceInfo").invoke(device);
+            Object name = info == null ? null : info.getClass().getMethod("getDisplayName").invoke(info);
+            return name == null ? "" : name.toString().trim();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     /** Vendors sometimes label a port by its hardware id ("HW2"); show a friendly name instead. */

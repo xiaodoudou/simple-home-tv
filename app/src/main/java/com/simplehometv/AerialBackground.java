@@ -289,7 +289,7 @@ public class AerialBackground extends FrameLayout {
 
     /** Shrinks the paused video to one pixel, freeing the screen for the input's picture. */
     public void hidePlane() {
-        if (!frozen || mp == null) return;
+        if (!frozen || mp == null || inWindow) return;
         planeHidden = true;
         video.setLayoutParams(new LayoutParams(1, 1));
     }
@@ -340,7 +340,7 @@ public class AerialBackground extends FrameLayout {
     public void releasePlane() {
         if (!frozen) return;
         release();
-        video.setVisibility(GONE);
+        if (!inWindow) video.setVisibility(GONE);   // a TextureView keeps its surface while hidden: restore replays it
     }
 
     /**
@@ -480,7 +480,8 @@ public class AerialBackground extends FrameLayout {
     static boolean use4k(Context c) {
         Boolean chosen = new Prefs(c).aerial4k();
         if (chosen != null) return chosen;
-        if (inWindow(c)) return false;      // drawn with the UI, at 1080p
+        // In the window the video is drawn at the UI's 1080p, and on these TVs a 4K decode starves the inputs.
+        if (inWindow(c)) return false;
         try {
             Display d = ((android.hardware.display.DisplayManager) c.getSystemService(Context.DISPLAY_SERVICE))
                     .getDisplay(Display.DEFAULT_DISPLAY);
@@ -492,7 +493,7 @@ public class AerialBackground extends FrameLayout {
 
     private void playNext() {
         if (!active || paused || held || surface == null) return;
-        if (source != null && resumeAt > 0) {
+        if (source != null && (resumeAt > 0 || frozen)) {
             play(source, sourceLocal);  // carry on with the clip that stepped aside
             return;
         }
@@ -537,8 +538,10 @@ public class AerialBackground extends FrameLayout {
                 resumeAt = 0;
                 p.start();
             });
+            loading(true);
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
+                    loading(!local);            // a streamed clip is still downloading
                     if (holdPaused) waitCaughtUp(p, SystemClock.uptimeMillis());
                     else cover.animate().alpha(0f).setDuration(900).start();
                 }
@@ -653,11 +656,25 @@ public class AerialBackground extends FrameLayout {
 
     private void release() {
         if (playing == this) playing = null;
-
+        loading(false);
         if (mp != null) {
             try { mp.release(); } catch (Exception ignored) { }
             mp = null;
         }
+    }
+
+    private java.util.function.Consumer<Boolean> onLoading;
+    private boolean isLoading;
+
+    /** Told when a clip starts loading (or streaming while it downloads) and when that is over. */
+    void setOnLoading(java.util.function.Consumer<Boolean> l) {
+        onLoading = l;
+    }
+
+    private void loading(boolean on) {
+        if (on == isLoading) return;
+        isLoading = on;
+        if (onLoading != null) onLoading.accept(on);
     }
 
     private static LayoutParams full() {

@@ -89,6 +89,7 @@ final class Content {
                 if (seen.add(it.title.toLowerCase(Locale.ROOT))) out.add(it);
             }
         }
+        Log.i(TAG, pkg + ": " + sources.size() + " sources, " + out.size() + " items");
         return out;
     }
 
