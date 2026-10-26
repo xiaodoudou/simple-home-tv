@@ -256,14 +256,17 @@ public class SettingsActivity extends Activity {
         rows.add(new Row("Manage apps", "Storage, permissions, uninstall", null,
                 () -> open(Settings.ACTION_APPLICATION_SETTINGS, Settings.ACTION_SETTINGS)));
         String store = Suggestions.store(this);
-        rows.add(new Row("App store", store == null ? "Install Aurora Store to get apps without Google Play" : null,
-                store == null ? "None" : Suggestions.PLAY.equals(store) ? "Google Play" : "Aurora Store",
+        boolean play = Suggestions.PLAY.equals(store);
+        rows.add(new Row("App store", store == null ? "Install APKUpdater to get apps without Google Play" : null,
+                store == null ? "None" : play ? "Google Play" : "APKUpdater",
                 store == null ? null : () -> launch(store)));
         for (Suggestions.App a : Suggestions.list(this)) {
             if (Suggestions.installed(this, a.pkg)) {
                 rows.add(new Row(a.name, a.why, "Installed", () -> launch(a.pkg)));
             } else if (store != null && a.site == null) {
-                rows.add(new Row(a.name, a.why, "Get", () -> startSafe(Suggestions.storeIntent(store, a.pkg))));
+                // APKUpdater cannot open an app's page, only itself.
+                rows.add(new Row(a.name, play ? a.why : a.why + ". Search for it in APKUpdater", "Get",
+                        play ? () -> startSafe(Suggestions.storeIntent(store, a.pkg)) : () -> launch(store)));
             } else if (a.site != null) {
                 rows.add(new Row(a.name, a.why + ". Get it from " + a.site, null, null));
             } else {

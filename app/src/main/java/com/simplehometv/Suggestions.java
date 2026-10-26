@@ -10,12 +10,13 @@ import java.util.List;
 
 /**
  * Apps worth having on a TV, picked by whether the device has Google Play. Without Play the official YouTube app
- * does not run, so SmartTube stands in, and Aurora Store (an anonymous Play client) is how the rest get installed.
+ * does not run, so SmartTube stands in, and APKUpdater (a Google Play client with a TV layout) is how the rest get
+ * installed.
  */
 final class Suggestions {
 
     static final String PLAY = "com.android.vending";
-    static final String AURORA = "com.aurora.store";
+    static final String APKUPDATER = "com.apkupdater.ci";
 
     static final class App {
         final String pkg, name, why, site;   // site: where to get it when no store carries it
@@ -34,10 +35,10 @@ final class Suggestions {
         return installed(c, PLAY);
     }
 
-    /** The store that will open market:// links, or null when there is none. */
+    /** The installed app store, or null when there is none. Only Google Play opens market:// links. */
     static String store(Context c) {
         if (hasPlay(c)) return PLAY;
-        if (installed(c, AURORA)) return AURORA;
+        if (installed(c, APKUPDATER)) return APKUPDATER;
         return null;
     }
 
@@ -48,7 +49,7 @@ final class Suggestions {
             out.add(new App("com.netflix.ninja", "Netflix", "Official app", null));
             out.add(new App("com.amazon.amazonvideo.livingroom", "Prime Video", "Official app", null));
         } else {
-            out.add(new App(AURORA, "Aurora Store", "Installs apps from Google Play without Google services", "f-droid.org/packages/com.aurora.store"));
+            out.add(new App(APKUPDATER, "APKUpdater", "Installs and updates Google Play apps with the remote, no Google services", "github.com/rumboalla/apkupdater"));
             out.add(new App("org.smarttube.stable", "SmartTube", "YouTube without ads, no Google services needed", "smarttubeapp.github.io"));
         }
         out.add(new App("com.plexapp.android", "Plex", "Your media server, movies and shows", null));
