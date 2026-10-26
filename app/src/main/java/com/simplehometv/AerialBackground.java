@@ -49,6 +49,8 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
     private final ExecutorService io = Executors.newSingleThreadExecutor();
     private final Handler main = new Handler(Looper.getMainLooper());
     private MediaPlayer mp;
+    // TVs have one or two video decoders: the screensaver's player takes over from the home's.
+    private static AerialBackground playing;
     private Surface surface;
     private boolean downloading;
     private boolean active = true;
@@ -120,6 +122,8 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
     private void play(String source, boolean local) {
         if (surface == null) return;
         release();
+        if (playing != null && playing != this) playing.release();
+        playing = this;
         try {
             mp = new MediaPlayer();
             mp.setSurface(surface);
@@ -222,6 +226,7 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
     }
 
     private void release() {
+        if (playing == this) playing = null;
         if (mp != null) {
             try { mp.release(); } catch (Exception ignored) { }
             mp = null;

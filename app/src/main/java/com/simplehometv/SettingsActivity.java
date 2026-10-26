@@ -247,10 +247,48 @@ public class SettingsActivity extends Activity {
     }
 
     private void screensaverRows() {
-        rows.add(new Row("Screensaver", "Which one, and when it starts", null, () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
+        boolean ours = String.valueOf(Settings.Secure.getString(getContentResolver(), "screensaver_components"))
+                .startsWith(getPackageName() + "/");
+        rows.add(new Row("Use Simple Home's screensaver", ours ? null : "Pick \"Simple Home\" in the TV's screensaver list",
+                ours ? "On" : "Off", () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
+        String album = prefs.photosAlbum();
+        boolean hasAlbum = GooglePhotos.looksLikeAlbum(album);
+        rows.add(new Row("Show", hasAlbum ? null : "Add a Google Photos album to show your photos",
+                prefs.screensaverPhotos() && hasAlbum ? "Google Photos" : "Aerial videos",
+                () -> prefs.setScreensaverPhotos(hasAlbum && !prefs.screensaverPhotos())));
+        rows.add(new Row("Google Photos album", "In Google Photos: open an album, Share, Create link. Then enter that link here",
+                hasAlbum ? "Set" : "Not set", this::askAlbum));
+        rows.add(new Row("Clock", "Time and date in the corner", onOff(prefs.screensaverClock()),
+                () -> prefs.setScreensaverClock(!prefs.screensaverClock())));
         rows.add(new Row("Start now", null, null, () -> startSafe(new Intent(Intent.ACTION_MAIN)
                 .setClassName("com.android.systemui", "com.android.systemui.Somnambulator")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
+        rows.add(new Row("When it starts", "Set by the TV", null, () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
+    }
+
+    private void askAlbum() {
+        android.widget.EditText field = new android.widget.EditText(this);
+        field.setSingleLine(true);
+        field.setHint("https://photos.app.goo.gl/...");
+        field.setText(prefs.photosAlbum());
+        field.setSelection(field.getText().length());
+        new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Google Photos album link")
+                .setView(field)
+                .setPositiveButton("Save", (d, w) -> {
+                    String url = field.getText().toString().trim();
+                    if (!url.isEmpty() && !GooglePhotos.looksLikeAlbum(url)) {
+                        android.widget.Toast.makeText(this, "That is not a Google Photos album link", android.widget.Toast.LENGTH_LONG).show();
+                        return;
+                    }
+                    prefs.setPhotosAlbum(url);
+                    prefs.setScreensaverPhotos(!url.isEmpty());
+                    int keep = rowFocus;
+                    showPage(page);
+                    focusRow(keep);
+                })
+                .setNegativeButton("Cancel", null)
+                .show();
     }
 
     private void aboutRows() {

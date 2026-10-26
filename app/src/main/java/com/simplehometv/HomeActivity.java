@@ -193,6 +193,12 @@ public class HomeActivity extends Activity {
         aerial.resume();
     }
 
+    /** Back from the screensaver, which took over the video player. */
+    @Override public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (hasFocus) aerial.resume();
+    }
+
     @Override protected void onPause() {
         super.onPause();
         main.removeCallbacks(tick);

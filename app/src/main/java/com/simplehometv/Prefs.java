@@ -34,6 +34,16 @@ final class Prefs {
     boolean preview() { return p.getBoolean("preview", true); }
     void setPreview(boolean on) { p.edit().putBoolean("preview", on).apply(); }
 
+    /** Screensaver shows the Google Photos album (when set) instead of aerial videos. */
+    boolean screensaverPhotos() { return p.getBoolean("ss_photos", false); }
+    void setScreensaverPhotos(boolean on) { p.edit().putBoolean("ss_photos", on).apply(); }
+
+    String photosAlbum() { return p.getString("photos_album", ""); }
+    void setPhotosAlbum(String url) { p.edit().putString("photos_album", url == null ? "" : url.trim()).apply(); }
+
+    boolean screensaverClock() { return p.getBoolean("ss_clock", true); }
+    void setScreensaverClock(boolean on) { p.edit().putBoolean("ss_clock", on).apply(); }
+
     /** The content sources ({@link Content.Source#key}) hidden from an app's spotlight. */
     Set<String> hiddenSources(String pkg) {
         return set("hide:" + pkg);
