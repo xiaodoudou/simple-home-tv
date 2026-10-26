@@ -188,8 +188,8 @@ public class HomeActivity extends Activity {
         if (mode == Mode.MENU) closeMenu();
         if (mode == Mode.DRAWER) resetDrawer();
         mode = Mode.HOME;
-        spots.clear();
         renderDock();
+        preloadSpots();
         focusDock(Math.max(0, indexOf(dockTiles, keep)));
         if (onGear) focusGear();
         updateClock();
@@ -547,7 +547,7 @@ public class HomeActivity extends Activity {
             Spot cached = spots.get(t.pkg);
             if (cached != null) {
                 applySpot(t, cached);
-                if (SystemClock.uptimeMillis() - cached.at < 30_000) return;
+                if (SystemClock.uptimeMillis() - cached.at < 120_000) return;
             }
             final int token = ++spotToken;
             pendingSpot = () -> loadSpot(t, token);
@@ -563,6 +563,30 @@ public class HomeActivity extends Activity {
                 main.postDelayed(pendingPreview, Math.max(800, 1500 - sinceStop));
             }
         }
+    }
+
+    /**
+     * Reads every pinned app's content in the background, so focusing a tile shows its row straight from memory:
+     * the TV's content database is slow to query.
+     */
+    private void preloadSpots() {
+        if (!prefs.spotlight()) return;
+        List<Tile> apps = new ArrayList<>();
+        for (Tile t : dockTiles) if (t.kind == Tile.Kind.APP) apps.add(t);
+        io.execute(() -> {
+            for (Tile t : apps) {
+                List<Content.Source> sources = Content.sources(this, t.pkg);
+                List<Content.Item> items = Content.items(this, t.pkg, sources, prefs.hiddenSources(t.pkg), 12);
+                for (int i = 0; i < Math.min(items.size(), 6); i++) ImageCache.load(this, items.get(i).art, Math.round(contentW * dp));
+                Spot s = new Spot(sources, items);
+                main.post(() -> {
+                    spots.put(t.pkg, s);
+                    sourcesByPkg.put(t.pkg, sources);
+                    if (mode == Mode.HOME && t.id.equals(spotFor) && dockFocus < dockTiles.size()
+                            && dockTiles.get(dockFocus).id.equals(t.id)) applySpot(t, s);
+                });
+            }
+        });
     }
 
     private void loadSpot(Tile t, int token) {
