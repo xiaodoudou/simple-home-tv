@@ -886,7 +886,7 @@ public class HomeActivity extends Activity {
         aerial.dimTo(1f, FADE_MS, closeInput);
     }
 
-    private static final long FADE_MS = 300, SETTLE_MS = 600;
+    private static final long FADE_MS = 300, SETTLE_MS = 400;
 
     private final Runnable revealInput = () -> {
         if (previewFor == null) return;

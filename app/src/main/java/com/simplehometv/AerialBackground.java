@@ -220,7 +220,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         video.setVisibility(GONE);      // frees the plane
         Runnable then = afterPause;
         afterPause = null;
-        if (then != null) main.postDelayed(then, 250);
+        if (then != null) main.postDelayed(then, 120);
     }
 
     /** Carries on from where {@link #pauseForInput()} left off; {@code onShown} runs at its first frame. */
