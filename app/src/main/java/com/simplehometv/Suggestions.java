@@ -49,7 +49,7 @@ final class Suggestions {
             out.add(new App("com.amazon.amazonvideo.livingroom", "Prime Video", "Official app", null));
         } else {
             out.add(new App(AURORA, "Aurora Store", "Installs apps from Google Play without Google services", "f-droid.org/packages/com.aurora.store"));
-            out.add(new App("com.teamsmart.videomanager.tv", "SmartTube", "YouTube without ads, no Google services needed", "smarttubeapp.github.io"));
+            out.add(new App("org.smarttube.stable", "SmartTube", "YouTube without ads, no Google services needed", "smarttubeapp.github.io"));
         }
         out.add(new App("com.plexapp.android", "Plex", "Your media server, movies and shows", null));
         out.add(new App("org.jellyfin.androidtv", "Jellyfin", "Free media server client", null));

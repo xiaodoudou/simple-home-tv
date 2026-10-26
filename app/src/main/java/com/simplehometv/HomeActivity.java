@@ -285,7 +285,6 @@ public class HomeActivity extends Activity {
         previewFrame.setVisibility(View.GONE);
         previewFrame.setBackground(Ui.rounded(0xFF000000, px(16)));
         Ui.clip(previewFrame, px(16));
-        previewFrame.setElevation(px(12));
 
         backShade = new View(this);
         backShade.setBackground(new LayerDrawable(new Drawable[]{
@@ -822,16 +821,16 @@ public class HomeActivity extends Activity {
             previewFrame.animate().cancel();
             previewFrame.setAlpha(1f);
             sizePreview(16f / 9f);
-            previewFrame.setVisibility(View.VISIBLE);
             // The TV takes the video decoder from a playing aerial when an input starts, so the aerial pauses
             // on a still frame first and the input is tuned once it has stepped aside.
             String inputId = t.inputId;
             aerial.pauseForInput(() -> {
                 if (!inputId.equals(previewFor) || tvView == null) return;
-                android.graphics.Matrix m = new android.graphics.Matrix();
-                m.setTranslate(-previewFrame.getLeft(), -previewFrame.getTop());
-                previewCover.setImageMatrix(m);
+                // The box opens showing exactly the paused frame behind it, so it appears without a seam, then
+                // crossfades to the live picture.
                 previewCover.setImageBitmap(aerial.stillFrame());
+                alignCover();
+                previewFrame.setVisibility(View.VISIBLE);
                 Log.i(TAG, "preview tune " + inputId);
                 tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
             });
@@ -867,6 +866,15 @@ public class HomeActivity extends Activity {
         lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         lp.topMargin = px(top + (screenHdp - top - bottom - h) / 2);
         previewFrame.setLayoutParams(lp);
+        alignCover();
+    }
+
+    /** Lines the cover's piece of the paused frame up with the same pixels behind the box. */
+    private void alignCover() {
+        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewFrame.getLayoutParams();
+        android.graphics.Matrix m = new android.graphics.Matrix();
+        m.setTranslate(-(root.getWidth() - lp.width) / 2f, -lp.topMargin);
+        previewCover.setImageMatrix(m);
     }
 
 
@@ -878,13 +886,13 @@ public class HomeActivity extends Activity {
         main.removeCallbacks(pendingPreview);
         if (previewFor == null) return;
         previewFor = null;
-        if (!resumed) {
+        if (!resumed || previewFrame.getVisibility() != View.VISIBLE || previewCover.getDrawable() == null) {
             closeInput.run();
             return;
         }
-        aerial.resumeAfterInput(() -> main.post(closeInput));
-        main.removeCallbacks(closeInput);
-        main.postDelayed(closeInput, 2500);
+        // Crossfade the box back to the paused frame, close it, then let the aerial carry on under the still.
+        previewCover.animate().cancel();
+        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(200).withEndAction(closeInput).start();
     }
 
     private final Runnable closeInput = () -> {
@@ -898,7 +906,8 @@ public class HomeActivity extends Activity {
             }
         }
         previewFrame.setVisibility(View.GONE);
-        if (resumed) aerial.resumeAfterInput(null);
+        previewCover.setImageBitmap(null);
+        aerial.resumeAfterInput(null);
     };
 
     // ---- all apps ----
