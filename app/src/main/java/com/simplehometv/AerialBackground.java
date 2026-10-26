@@ -133,7 +133,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
         cover.animate().cancel();
         dim.animate().cancel();
-        dim.animate().alpha(DIM).setDuration(250).withEndAction(() -> {
+        dim.animate().alpha(1f).setDuration(300).withEndAction(() -> {
             if (!paused || mp == null) return;
             // Pause first, so the frame copied below is the one on screen.
             try {
@@ -169,6 +169,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 afterNextFrame(() -> {
                     if (paused) leavePlane();
                 });
+                return;
             }, main);
         } catch (Exception e) {
             leavePlane();
@@ -194,8 +195,13 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         still.animate().cancel();
         still.setVisibility(GONE);
         still.setImageBitmap(null);
+        dimTo(0f, 600, null);
+    }
+
+    /** Fades the dim (black over the background) to {@code alpha}; {@code end} runs when it gets there. */
+    public void dimTo(float alpha, long ms, Runnable end) {
         dim.animate().cancel();
-        dim.animate().alpha(0f).setDuration(450).start();
+        dim.animate().alpha(alpha).setStartDelay(0).setDuration(ms).withEndAction(end).start();
     }
 
     /** The paused frame, or null when there is none. */
@@ -214,7 +220,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         video.setVisibility(GONE);      // frees the plane
         Runnable then = afterPause;
         afterPause = null;
-        if (then != null) then.run();
+        if (then != null) main.postDelayed(then, 250);
     }
 
     /** Carries on from where {@link #pauseForInput()} left off; {@code onShown} runs at its first frame. */

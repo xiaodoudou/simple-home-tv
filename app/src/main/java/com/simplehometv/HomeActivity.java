@@ -325,14 +325,7 @@ public class HomeActivity extends Activity {
 
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
         previewCover = new ImageView(this);
-        previewCover.setScaleType(ImageView.ScaleType.MATRIX);
-        // Looks like the dimmed, blurred background behind the box, so the box opens without a seam.
-        previewCover.setColorFilter(Color.argb(Math.round(AerialBackground.DIM * 255), 0, 0, 0),
-                android.graphics.PorterDuff.Mode.SRC_ATOP);
-        if (android.os.Build.VERSION.SDK_INT >= 31) {
-            previewCover.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(
-                    AerialBackground.BLUR, AerialBackground.BLUR, android.graphics.Shader.TileMode.CLAMP));
-        }
+        previewCover.setBackgroundColor(0xFF000000);
         previewFrame.addView(previewCover, new FrameLayout.LayoutParams(-1, -1));
         previewLabel = Ui.text(this, Ui.semibold(), 13, Ui.TEXT);
         previewLabel.setBackground(Ui.rounded(0x99000000, px(8)));
@@ -798,7 +791,9 @@ public class HomeActivity extends Activity {
                 tvView.setCallback(new TvView.TvInputCallback() {
                     @Override public void onVideoAvailable(String inputId) {
                         Log.i(TAG, "preview video available");
-                        previewCover.animate().alpha(0f).setStartDelay(120).setDuration(350).start();
+                        // Give the TV time to finish switching its picture settings while all is still black.
+                        main.removeCallbacks(revealInput);
+                        main.postDelayed(revealInput, SETTLE_MS);
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
@@ -817,26 +812,21 @@ public class HomeActivity extends Activity {
                 });
                 previewFrame.addView(tvView, 0, full());
             }
-            // The aerial keeps playing over the input (the TV always draws it on top) until the input has a
-            // picture; then it steps aside, so the switch goes straight from one picture to the other.
             main.removeCallbacks(closeInput);
+            main.removeCallbacks(revealInput);
             previewFor = t.inputId;
             previewLabel.setText(t.label);
             previewCover.animate().cancel();
-            previewCover.setImageBitmap(null);
             previewCover.setAlpha(1f);
             previewFrame.animate().cancel();
             previewFrame.setAlpha(1f);
             sizePreview(16f / 9f);
-            // The TV takes the video decoder from a playing aerial when an input starts, so the aerial pauses
-            // on a still frame first and the input is tuned once it has stepped aside.
+            // Starting an input makes the TV blank its video and load that input's picture settings, which shows
+            // as a black flash. So the background fades to black first, the aerial pauses under it, and the input
+            // starts in the dark; revealInput brings the picture up once the TV has settled.
             String inputId = t.inputId;
             aerial.pauseForInput(() -> {
                 if (!inputId.equals(previewFor) || tvView == null) return;
-                // The box opens showing exactly the paused frame behind it, so it appears without a seam, then
-                // crossfades to the live picture.
-                previewCover.setImageBitmap(aerial.stillFrame());
-                alignCover();
                 previewFrame.setVisibility(View.VISIBLE);
                 Log.i(TAG, "preview tune " + inputId);
                 tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
@@ -873,16 +863,8 @@ public class HomeActivity extends Activity {
         lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
         lp.topMargin = px(top + (screenHdp - top - bottom - h) / 2);
         previewFrame.setLayoutParams(lp);
-        alignCover();
     }
 
-    /** Lines the cover's piece of the paused frame up with the same pixels behind the box. */
-    private void alignCover() {
-        FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewFrame.getLayoutParams();
-        android.graphics.Matrix m = new android.graphics.Matrix();
-        m.setTranslate(-(root.getWidth() - lp.width) / 2f, -lp.topMargin);
-        previewCover.setImageMatrix(m);
-    }
 
 
     /**
@@ -891,16 +873,27 @@ public class HomeActivity extends Activity {
      */
     private void stopPreview() {
         main.removeCallbacks(pendingPreview);
+        main.removeCallbacks(revealInput);
         if (previewFor == null) return;
         previewFor = null;
-        if (!resumed || previewFrame.getVisibility() != View.VISIBLE || previewCover.getDrawable() == null) {
+        if (!resumed || previewFrame.getVisibility() != View.VISIBLE) {
             closeInput.run();
             return;
         }
-        // Crossfade the box back to the paused frame, close it, then let the aerial carry on under the still.
+        // The mirror of opening: fade to black, close the input in the dark, then bring the aerial back.
         previewCover.animate().cancel();
-        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(200).withEndAction(closeInput).start();
+        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(FADE_MS).start();
+        aerial.dimTo(1f, FADE_MS, closeInput);
     }
+
+    private static final long FADE_MS = 300, SETTLE_MS = 600;
+
+    private final Runnable revealInput = () -> {
+        if (previewFor == null) return;
+        previewCover.animate().cancel();
+        previewCover.animate().alpha(0f).setStartDelay(0).setDuration(450).start();
+        aerial.dimTo(AerialBackground.DIM, 450, null);
+    };
 
     private final Runnable closeInput = () -> {
         main.removeCallbacks(this.closeInput);
@@ -913,8 +906,10 @@ public class HomeActivity extends Activity {
             }
         }
         previewFrame.setVisibility(View.GONE);
-        previewCover.setImageBitmap(null);
-        aerial.resumeAfterInput(null);
+        // Wait in the dark while the TV switches its picture back, then let the aerial carry on.
+        main.postDelayed(() -> {
+            if (previewFor == null) aerial.resumeAfterInput(null);
+        }, resumed ? SETTLE_MS : 0);
     };
 
     // ---- all apps ----
