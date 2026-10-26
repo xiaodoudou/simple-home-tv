@@ -22,9 +22,9 @@ grep -Ev '^[[:space:]]*(#|$)' "$list" | tr -d '\r' | while read -r line; do
     esac
     case "$skip" in *",$group,"*) continue ;; esac
     if [ $undo = 1 ]; then
-        out=$(adb $serial shell pm enable "$line" 2>&1 | tail -1)
+        out=$(adb $serial shell pm enable "$line" </dev/null 2>&1 | tail -1)
     else
-        out=$(adb $serial shell pm disable-user --user 0 "$line" 2>&1 | tail -1)
+        out=$(adb $serial shell pm disable-user --user 0 "$line" </dev/null 2>&1 | tail -1)
     fi
     printf '%-20s %-45s %s\n' "$group" "$line" "$out"
 done
