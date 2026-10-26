@@ -132,18 +132,14 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             return;
         }
         cover.animate().cancel();
-        dim.animate().cancel();
-        dim.animate().alpha(DIM).setDuration(300).withEndAction(() -> {
-            if (!paused || mp == null) return;
-            // Pause first, so the frame copied below is the one on screen.
-            try {
-                mp.pause();
-                resumeAt = mp.getCurrentPosition();
-            } catch (Exception e) {
-                resumeAt = 0;
-            }
-            afterNextFrame(this::copyStill);
-        }).start();
+        // Pause first, so the frame copied is the one on screen.
+        try {
+            mp.pause();
+            resumeAt = mp.getCurrentPosition();
+        } catch (Exception e) {
+            resumeAt = 0;
+        }
+        afterNextFrame(this::copyStill);
     }
 
     /** Swaps the paused video for a picture of the same frame, drawn with the UI, then frees the plane. */
@@ -161,15 +157,19 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 still.animate().cancel();
                 still.setImageBitmap(frame);
                 still.setAlpha(1f);
-                if (android.os.Build.VERSION.SDK_INT >= 31) {
-                    still.setRenderEffect(android.graphics.RenderEffect.createBlurEffect(BLUR, BLUR,
-                            android.graphics.Shader.TileMode.CLAMP));
-                }
+                setBlur(0f);
                 still.setVisibility(VISIBLE);
+                // Free the video hardware under the still, then blur and dim it progressively.
                 afterNextFrame(() -> {
-                    if (paused) leavePlane();
+                    if (!paused) return;
+                    Runnable then = afterPause;
+                    afterPause = null;
+                    release();
+                    video.setVisibility(GONE);
+                    animateBlur(1f, BLUR_MS, () -> {
+                        if (paused && then != null) then.run();
+                    });
                 });
-                return;
             }, main);
         } catch (Exception e) {
             leavePlane();
@@ -192,10 +192,49 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             main.postDelayed(() -> revealWhenCaughtUp(p, since), 40);
             return;
         }
+        if (blurAnim != null && blurAnim.isRunning()) {
+            main.postDelayed(() -> revealWhenCaughtUp(p, since), 40);   // let the unblur finish first
+            return;
+        }
         still.animate().cancel();
-        still.setVisibility(GONE);
-        still.setImageBitmap(null);
-        dimTo(0f, 600, null);
+        still.animate().alpha(0f).setDuration(200).withEndAction(() -> {
+            still.setVisibility(GONE);
+            still.setImageBitmap(null);
+            still.setAlpha(1f);
+        }).start();
+        dimTo(0f, 200, null);
+    }
+
+    static final long BLUR_MS = 450;
+    private android.animation.ValueAnimator blurAnim;
+    private float blurLevel;
+
+    /** Blur and dim together, 0 (the sharp frame) to 1 (blurred and dimmed behind an input). */
+    private void animateBlur(float to, long ms, Runnable end) {
+        if (blurAnim != null) blurAnim.cancel();
+        blurAnim = android.animation.ValueAnimator.ofFloat(blurLevel, to);
+        blurAnim.setDuration(ms);
+        blurAnim.setInterpolator(Ui.EASE);
+        blurAnim.addUpdateListener(a -> setBlur((float) a.getAnimatedValue()));
+        if (end != null) {
+            blurAnim.addListener(new android.animation.AnimatorListenerAdapter() {
+                private boolean cancelled;
+                @Override public void onAnimationCancel(android.animation.Animator a) { cancelled = true; }
+                @Override public void onAnimationEnd(android.animation.Animator a) { if (!cancelled) end.run(); }
+            });
+        }
+        blurAnim.start();
+    }
+
+    private void setBlur(float level) {
+        blurLevel = level;
+        dim.animate().cancel();
+        dim.setAlpha(DIM * level);
+        if (android.os.Build.VERSION.SDK_INT >= 31) {
+            float r = BLUR * level;
+            still.setRenderEffect(r < 0.5f ? null : android.graphics.RenderEffect.createBlurEffect(r, r,
+                    android.graphics.Shader.TileMode.CLAMP));
+        }
     }
 
     /** Fades the dim (black over the background) to {@code alpha}; {@code end} runs when it gets there. */
@@ -243,8 +282,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
                 mp.start();
             } catch (Exception ignored) {
             }
-            dim.animate().cancel();
-            dim.animate().alpha(0f).setDuration(300).start();
+            if (blurAnim != null) blurAnim.cancel();
+            setBlur(0f);
             still.animate().cancel();
             still.setVisibility(GONE);
             if (this.onShown != null) {
@@ -254,6 +293,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             }
             return;
         }
+        // Unblur back to the sharp frame while the video restarts underneath; the still goes when both are done.
+        animateBlur(0f, BLUR_MS, null);
         if (video.getVisibility() != VISIBLE) video.setVisibility(VISIBLE);   // surfaceCreated plays
         else if (holder != null) playNext();
     }

@@ -105,7 +105,9 @@ public class HomeActivity extends Activity {
     private boolean resumed;
     private Zone zone = Zone.DOCK;
     private int dockFocus, contentFocus, drawerFocus;
-    private String spotFor;                     // tile id whose content is on screen
+    private String spotFor;                     // tile id focused for content
+    private String shownFor;                    // tile id whose content row is drawn
+    private int spotGen;                        // bumps on every row change, so stale fades do nothing
     private String previewFor;                  // input id the preview is tuned to
     private long previewStoppedAt;
     private int previewRetries;
@@ -540,7 +542,7 @@ public class HomeActivity extends Activity {
         main.removeCallbacks(pendingPreview);
         if (t.kind != Tile.Kind.INPUT || !t.inputId.equals(previewFor)) stopPreview();
         if (t.kind == Tile.Kind.APP) {
-            if (!t.id.equals(spotFor)) clearSpot();
+            if (!t.id.equals(spotFor) && spots.get(t.pkg) == null) fadeOutSpot();
             spotFor = t.id;
             if (!prefs.spotlight()) return;
             Spot cached = spots.get(t.pkg);
@@ -553,7 +555,7 @@ public class HomeActivity extends Activity {
             main.postDelayed(pendingSpot, cached != null ? 0 : 160);
         } else {
             spotFor = null;
-            clearSpot();
+            fadeOutSpot();
             if (t.kind == Tile.Kind.INPUT && prefs.preview() && !prefs.previewOff(t.inputId)) {
                 previewRetries = 0;
                 pendingPreview = () -> startPreview(t);
@@ -601,31 +603,73 @@ public class HomeActivity extends Activity {
         });
     }
 
+    /**
+     * Shows an app's content row. Moving between two apps crossfades: the old row and title fade out, the new
+     * ones fade in, instead of the row being swapped in a single frame.
+     */
     private void applySpot(Tile t, Spot s) {
         if (s.items.isEmpty()) {
             boolean wasInRow = zone == Zone.CONTENT;
-            clearSpot();
+            fadeOutSpot();
             if (wasInRow) for (int k = 0; k < dockViews.size(); k++) setFocused(dockViews.get(k), k == dockFocus, true);
             return;
         }
-        if (!sameItems(s.items)) {
-            contentItems.clear();
-            contentItems.addAll(s.items);
-            renderContent();
-            if (zone == Zone.CONTENT) {
-                focusContent(Math.min(contentFocus, contentViews.size() - 1));
-                return;
-            }
+        boolean showing = contentScroll.getVisibility() == View.VISIBLE && shownFor != null;
+        if (showing && t.id.equals(shownFor)) {
+            if (!sameItems(s.items)) fillSpot(t, s);
+            return;
         }
-        if (contentScroll.getVisibility() != View.VISIBLE) {
+        int gen = ++spotGen;
+        if (showing) {
+            contentScroll.animate().cancel();
+            hero.animate().cancel();
+            hero.animate().alpha(0f).setDuration(110).start();
+            contentScroll.animate().alpha(0f).translationY(px(-6)).setDuration(110).setInterpolator(Ui.EASE)
+                    .withEndAction(() -> {
+                        if (gen != spotGen) return;
+                        fillSpot(t, s);
+                        revealSpot(gen);
+                    }).start();
+        } else {
+            fillSpot(t, s);
             contentScroll.setVisibility(View.VISIBLE);
             contentScroll.setAlpha(0f);
-            contentScroll.setTranslationY(px(16));
-            contentScroll.animate().alpha(1f).translationY(0).setDuration(320).setInterpolator(Ui.EASE).start();
+            hero.setAlpha(0f);
+            revealSpot(gen);
         }
+        backShade.animate().alpha(0.85f).setDuration(300).start();
+    }
+
+    private void fillSpot(Tile t, Spot s) {
+        shownFor = t.id;
+        contentItems.clear();
+        contentItems.addAll(s.items);
+        renderContent();
         heroIcon.setImageDrawable(appIcon(t.pkg));
         showHeroFor(zone == Zone.CONTENT ? contentFocus : 0);
-        hero.animate().alpha(1f).setDuration(260).start();
+        if (zone == Zone.CONTENT) focusContent(Math.min(contentFocus, contentViews.size() - 1));
+    }
+
+    private void revealSpot(int gen) {
+        if (gen != spotGen) return;
+        contentScroll.setTranslationY(px(10));
+        contentScroll.animate().alpha(1f).translationY(0).setDuration(220).setInterpolator(Ui.EASE).start();
+        hero.animate().alpha(1f).setDuration(220).start();
+    }
+
+    /** Fades the content row away (for a tile with no content), then clears it. */
+    private void fadeOutSpot() {
+        if (shownFor == null && contentScroll.getVisibility() != View.VISIBLE) return;
+        int gen = ++spotGen;
+        shownFor = null;
+        if (zone == Zone.CONTENT) zone = Zone.DOCK;
+        hero.animate().cancel();
+        hero.animate().alpha(0f).setDuration(160).start();
+        contentScroll.animate().cancel();
+        contentScroll.animate().alpha(0f).setDuration(160).withEndAction(() -> {
+            if (gen == spotGen) clearSpot();
+        }).start();
+        hideBackdrop();
     }
 
     private boolean sameItems(List<Content.Item> items) {
@@ -647,6 +691,8 @@ public class HomeActivity extends Activity {
     }
 
     private void clearSpot() {
+        spotGen++;
+        shownFor = null;
         contentItems.clear();
         contentViews.clear();
         contentRow.removeAllViews();
@@ -827,9 +873,16 @@ public class HomeActivity extends Activity {
             String inputId = t.inputId;
             aerial.pauseForInput(() -> {
                 if (!inputId.equals(previewFor) || tvView == null) return;
+                // The box fades in as a black panel first; the input's surface only exists once it is up.
+                tvView.setVisibility(View.INVISIBLE);
+                previewFrame.setAlpha(0f);
                 previewFrame.setVisibility(View.VISIBLE);
-                Log.i(TAG, "preview tune " + inputId);
-                tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
+                previewFrame.animate().alpha(1f).setDuration(250).withEndAction(() -> {
+                    if (!inputId.equals(previewFor) || tvView == null) return;
+                    tvView.setVisibility(View.VISIBLE);
+                    Log.i(TAG, "preview tune " + inputId);
+                    tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
+                }).start();
             });
         } catch (Exception e) {
             Log.w(TAG, "preview failed: " + e);
@@ -903,11 +956,22 @@ public class HomeActivity extends Activity {
             } catch (Exception ignored) {
             }
         }
-        previewFrame.setVisibility(View.GONE);
-        // Let the TV switch its picture back before the aerial takes the video hardware again.
+        if (tvView != null) tvView.setVisibility(View.INVISIBLE);
+        if (!resumed) {
+            previewFrame.setVisibility(View.GONE);
+            aerial.resumeAfterInput(null);
+            return;
+        }
+        // The black box fades away, then (once the TV has switched its picture back) the aerial comes back.
+        previewFrame.animate().cancel();
+        previewFrame.animate().alpha(0f).setDuration(250).withEndAction(() -> {
+            if (previewFor != null) return;
+            previewFrame.setVisibility(View.GONE);
+            previewFrame.setAlpha(1f);
+        }).start();
         main.postDelayed(() -> {
             if (previewFor == null) aerial.resumeAfterInput(null);
-        }, resumed ? SETTLE_MS : 0);
+        }, SETTLE_MS);
     };
 
     // ---- all apps ----
