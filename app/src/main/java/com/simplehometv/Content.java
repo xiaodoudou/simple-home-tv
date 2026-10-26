@@ -4,12 +4,14 @@ import android.content.Context;
 import android.database.Cursor;
 import android.media.tv.TvContract;
 import android.net.Uri;
+import android.os.Build;
 import android.util.Log;
 
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -75,6 +77,7 @@ final class Content {
 
     /** Up to {@code max} items from the sources not in {@code hidden}, deduplicated by title, in source order. */
     static List<Item> items(Context c, String pkg, List<Source> sources, Set<String> hidden, int max) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return new ArrayList<>();    // no Watch Next or preview programs before 8.0
         List<Item> out = new ArrayList<>();
         if (Demo.on(c)) return Demo.items(pkg, sources, hidden, max);
         Set<String> seen = new HashSet<>();
@@ -83,13 +86,14 @@ final class Content {
             List<Item> part = WATCH_NEXT.equals(s.key) ? watchNext(c, pkg, max) : previews(c, s.channelId, max);
             for (Item it : part) {
                 if (out.size() >= max) return out;
-                if (seen.add(it.title.toLowerCase())) out.add(it);
+                if (seen.add(it.title.toLowerCase(Locale.ROOT))) out.add(it);
             }
         }
         return out;
     }
 
     /** The app's "continue" and "next episode" entries, most recently watched first (how apps order them). */
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
     private static List<Item> watchNext(Context c, String pkg, int max) {
         List<Item> out = new ArrayList<>();
         String[] cols = {
@@ -121,6 +125,7 @@ final class Content {
     }
 
     /** A preview channel's programs in the order the app published them. */
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
     private static List<Item> previews(Context c, long channelId, int max) {
         List<Item> out = new ArrayList<>();
         String[] cols = {

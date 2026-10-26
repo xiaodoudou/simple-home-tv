@@ -3,7 +3,7 @@
 set -e
 export MSYS_NO_PATHCONV=1
 export JAVA_HOME="C:/Program Files/Android/Android Studio/jbr"
-TV=${TV:-172.30.20.106:5555}
+TV=${TV:?set TV to the adb address of the TV, for example TV=192.168.1.20:5555}
 cd "$(dirname "$0")/.."
 ./gradlew -q assembleDebug testDebugUnitTest
 mkdir -p /c/Temp/shtv

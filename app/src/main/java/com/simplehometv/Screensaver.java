@@ -1,9 +1,5 @@
 package com.simplehometv;
 
-import android.animation.ObjectAnimator;
-import android.animation.PropertyValuesHolder;
-import android.graphics.Bitmap;
-import android.view.animation.LinearInterpolator;
 import android.os.Handler;
 import android.os.Looper;
 import android.service.dreams.DreamService;
@@ -11,32 +7,21 @@ import android.text.format.DateFormat;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
-import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Date;
-import java.util.List;
 import java.util.Locale;
 
-/** The TV's screensaver: aerial videos or a Google Photos album, with the time in a corner. */
+/** The TV's screensaver: aerial videos, with the time in a corner. */
 public class Screensaver extends DreamService {
-
-    private static final long PHOTO_MS = 12_000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private AerialBackground aerial;
-    private ImageView photoA, photoB;
     private TextView clock, date;
-    private final List<String> photos = new ArrayList<>();
-    private int photoIndex;
-    private volatile boolean running;
 
     private final Runnable tick = this::updateClock;
-    private final Runnable nextPhoto = this::showNextPhoto;
 
     @Override public void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -50,10 +35,6 @@ public class Screensaver extends DreamService {
         root.setBackgroundColor(0xFF000000);
         aerial = new AerialBackground(this);
         root.addView(aerial, new FrameLayout.LayoutParams(-1, -1));
-        photoA = photoView();
-        photoB = photoView();
-        root.addView(photoA, new FrameLayout.LayoutParams(-1, -1));
-        root.addView(photoB, new FrameLayout.LayoutParams(-1, -1));
 
         View shade = new View(this);
         shade.setBackground(new android.graphics.drawable.GradientDrawable(
@@ -76,68 +57,13 @@ public class Screensaver extends DreamService {
         corner.setVisibility(prefs.screensaverClock() ? View.VISIBLE : View.GONE);
 
         setContentView(root);
-        running = true;
         updateClock();
-        if (prefs.screensaverPhotos()) loadPhotos();
     }
 
     @Override public void onDetachedFromWindow() {
-        running = false;
         main.removeCallbacks(tick);
-        main.removeCallbacks(nextPhoto);
         if (aerial != null) aerial.stop();
         super.onDetachedFromWindow();
-    }
-
-    private ImageView photoView() {
-        ImageView v = new ImageView(this);
-        v.setScaleType(ImageView.ScaleType.CENTER_CROP);
-        v.setAlpha(0f);
-        return v;
-    }
-
-    /** Photos replace the aerial video once the first one is ready; until then, or without photos, video plays. */
-    private void loadPhotos() {
-        new Thread(() -> {
-            List<String> found = new ArrayList<>();
-            for (java.io.File f : Photos.list(this)) found.add(f.getPath());
-            Collections.shuffle(found);
-            main.post(() -> {
-                if (!running || found.isEmpty()) return;
-                photos.addAll(found);
-                showNextPhoto();
-            });
-        }).start();
-    }
-
-    private void showNextPhoto() {
-        if (!running || photos.isEmpty()) return;
-        String url = photos.get(photoIndex++ % photos.size());
-        new Thread(() -> {
-            Bitmap b = Photos.decode(url, 1920);
-            main.post(() -> {
-                if (!running) return;
-                if (b != null) crossfade(b);
-                main.postDelayed(nextPhoto, b != null ? PHOTO_MS : 1000);
-            });
-        }).start();
-    }
-
-    private void crossfade(Bitmap b) {
-        ImageView in = photoA.getAlpha() > 0.5f ? photoB : photoA, out = in == photoA ? photoB : photoA;
-        in.bringToFront();
-        ((View) clock.getParent()).bringToFront();
-        in.setImageBitmap(b);
-        in.animate().alpha(1f).setDuration(1500).withEndAction(() -> {
-            out.setAlpha(0f);
-            if (aerial != null) aerial.stop();
-        }).start();
-        // A slow push-in keeps still photos from looking frozen.
-        ObjectAnimator zoom = ObjectAnimator.ofPropertyValuesHolder(in,
-                PropertyValuesHolder.ofFloat(View.SCALE_X, 1f, 1.06f), PropertyValuesHolder.ofFloat(View.SCALE_Y, 1f, 1.06f));
-        zoom.setDuration(PHOTO_MS + 1500);
-        zoom.setInterpolator(new LinearInterpolator());
-        zoom.start();
     }
 
     private void updateClock() {

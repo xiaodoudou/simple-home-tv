@@ -299,12 +299,6 @@ public class SettingsActivity extends Activity {
                 .startsWith(getPackageName() + "/");
         rows.add(new Row("Use Simple Home's screensaver", ours ? null : "Pick \"Simple Home\" in the TV's screensaver list",
                 ours ? "On" : "Off", () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
-        int photos = Photos.list(this).size();
-        rows.add(new Row("Show", photos == 0 ? "No photos on the TV yet" : null,
-                prefs.screensaverPhotos() && photos > 0 ? "Your photos" : "Aerial videos",
-                () -> prefs.setScreensaverPhotos(photos > 0 && !prefs.screensaverPhotos())));
-        rows.add(new Row("Your photos", "Private: chosen in Google Photos on your PC with google_photos_to_tv.py, then kept on the TV",
-                photos + " photos", null));
         rows.add(new Row("Clock", "Time and date in the corner", onOff(prefs.screensaverClock()),
                 () -> prefs.setScreensaverClock(!prefs.screensaverClock())));
         rows.add(new Row("Start now", null, null, () -> startSafe(new Intent(Intent.ACTION_MAIN)

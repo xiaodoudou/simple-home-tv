@@ -55,10 +55,6 @@ final class Prefs {
     Boolean aerial4k() { return p.contains("aerial_4k") ? p.getBoolean("aerial_4k", false) : null; }
     void setAerial4k(boolean on) { p.edit().putBoolean("aerial_4k", on).apply(); }
 
-    /** Screensaver shows the user's photos (when there are any) instead of aerial videos. */
-    boolean screensaverPhotos() { return p.getBoolean("ss_photos", false); }
-    void setScreensaverPhotos(boolean on) { p.edit().putBoolean("ss_photos", on).apply(); }
-
     boolean screensaverClock() { return p.getBoolean("ss_clock", true); }
     void setScreensaverClock(boolean on) { p.edit().putBoolean("ss_clock", on).apply(); }
 
