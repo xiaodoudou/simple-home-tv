@@ -184,6 +184,105 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         }
     }
 
+    // ---- the fast path, when the input's session is already open ----
+    //
+    // The player is never released: it stays paused on its frame, and its surface shrinks to one pixel so the
+    // input's picture shows; coming back is just growing it again, on the exact same 4K frame. Only the blur is a
+    // copy, faded over and off the real paused video.
+
+    private boolean planeHidden;
+
+    /** Pauses the video and fades a blurred, dimmed copy of the frame over it; {@code done} runs once covered. */
+    public void blurOver(Runnable done) {
+        if (frozen) {
+            animateBlur(1f, BLUR_MS, done);
+            return;
+        }
+        frozen = true;
+        paused = true;
+        if (mp == null || holder == null || getWidth() == 0) {
+            cover.animate().cancel();
+            cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();
+            return;
+        }
+        try {
+            mp.pause();
+            resumeAt = mp.getCurrentPosition();
+        } catch (Exception e) {
+            resumeAt = 0;
+        }
+        afterNextFrame(() -> {
+            if (!frozen) return;
+            android.graphics.Bitmap frame = android.graphics.Bitmap.createBitmap(getWidth(), getHeight(),
+                    android.graphics.Bitmap.Config.ARGB_8888);
+            try {
+                android.view.PixelCopy.request(video, frame, result -> {
+                    if (!frozen) return;
+                    if (result != android.view.PixelCopy.SUCCESS) {
+                        cover.animate().cancel();
+                        cover.animate().alpha(1f).setDuration(STILL_MS).withEndAction(done).start();
+                        return;
+                    }
+                    soft.setImageBitmap(Blur.of(frame));
+                    setBlur(0f);
+                    soft.setVisibility(VISIBLE);
+                    animateBlur(1f, BLUR_MS, done);
+                }, main);
+            } catch (Exception e) {
+                if (done != null) done.run();
+            }
+        });
+    }
+
+    /** Shrinks the paused video to one pixel, freeing the screen for the input's picture. */
+    public void hidePlane() {
+        if (!frozen || mp == null) return;
+        planeHidden = true;
+        video.setLayoutParams(new LayoutParams(1, 1));
+    }
+
+    public boolean isPlaneHidden() {
+        return planeHidden;
+    }
+
+    /** Whether the sharp copy is up (the slow path, where the player was released). */
+    public boolean isStillUp() {
+        return still.getVisibility() == VISIBLE;
+    }
+
+    /** Grows the paused video back (same frame, so instantly), then fades the blur off it and plays on. */
+    public void unblurOff(Runnable shown) {
+        if (!frozen) {
+            if (shown != null) shown.run();
+            return;
+        }
+        if (planeHidden) {
+            planeHidden = false;
+            video.setLayoutParams(full());
+        }
+        afterNextFrame(() -> {
+            if (!frozen) return;
+            if (shown != null) shown.run();
+            animateBlur(0f, BLUR_MS, () -> {
+                if (!frozen || still.getVisibility() == VISIBLE) return;
+                frozen = false;
+                paused = false;
+                soft.setVisibility(GONE);
+                soft.setImageBitmap(null);
+                if (mp != null) {
+                    try {
+                        mp.start();
+                    } catch (Exception ignored) {
+                    }
+                    cover.animate().cancel();
+                    cover.animate().alpha(0f).setDuration(STILL_MS).start();
+                } else {
+                    resume();
+                }
+            });
+        });
+    }
+
     /** Frees the video plane under the frozen frame, keeping where the clip was. */
     public void releasePlane() {
         if (!frozen) return;
@@ -245,7 +344,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         return frozen;
     }
 
-    static final long STILL_MS = 300;
+    static final long STILL_MS = 250;
     private boolean holdPaused;         // restoring: stop at the frozen moment instead of playing on
 
     private void waitCaughtUp(MediaPlayer p, long since) {
@@ -269,7 +368,7 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         if (done != null) afterNextFrame(done);     // a frame for the paused picture to reach the screen
     }
 
-    static final long BLUR_MS = 450;
+    static final long BLUR_MS = 420;
     private android.animation.ValueAnimator blurAnim;
     private float blurLevel;
 

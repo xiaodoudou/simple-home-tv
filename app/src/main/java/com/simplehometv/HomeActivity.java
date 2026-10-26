@@ -81,7 +81,9 @@ public class HomeActivity extends Activity {
     private LinearLayout contentRow, dockBox;
     private FrameLayout previewFrame;
     private TvView tvView;
-    private ImageView previewCover;   // the paused aerial's piece behind the box, fading out as the input appears
+    private ImageView previewCover;
+    private FrameLayout previewMask;    // the box's filling: blurred frame plus shade, faded to show the input
+    private View previewShade;   // the paused aerial's piece behind the box, fading out as the input appears
     private View drawerBg;
     private LinearLayout drawerHeader;
     private ScrollView drawerScroll;
@@ -301,8 +303,7 @@ public class HomeActivity extends Activity {
 
 
         scrim = new View(this);
-        scrim.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0x8C000000, 0x1A000000, 0x00000000, 0x4D000000, 0xD9000000}));
+        scrim.setBackground(scrimDrawable());
         root.addView(scrim, full());
 
         clock = Ui.text(this, Ui.light(), 48, Ui.TEXT);
@@ -332,11 +333,17 @@ public class HomeActivity extends Activity {
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
         // Filled with the same blurred, dimmed frame as the background, so the box is invisible until the
         // input's picture fades in, and melts back into the background when it closes.
+        previewMask = new FrameLayout(this);
         previewCover = new ImageView(this);
         previewCover.setScaleType(ImageView.ScaleType.MATRIX);
         previewCover.setColorFilter(Color.argb(Math.round(AerialBackground.DIM * 255), 0, 0, 0),
                 android.graphics.PorterDuff.Mode.SRC_ATOP);
-        previewFrame.addView(previewCover, new FrameLayout.LayoutParams(-1, -1));
+        previewMask.addView(previewCover, new FrameLayout.LayoutParams(-1, -1));
+        // The screen's shade is drawn under the box, so the box carries its own piece of it to match.
+        previewShade = new View(this);
+        previewShade.setBackground(scrimDrawable());
+        previewMask.addView(previewShade);
+        previewFrame.addView(previewMask, new FrameLayout.LayoutParams(-1, -1));
         root.addView(previewFrame, new FrameLayout.LayoutParams(px(480), px(270)));
 
 
@@ -429,6 +436,11 @@ public class HomeActivity extends Activity {
         setContentView(root);
     }
 
+
+    private static GradientDrawable scrimDrawable() {
+        return new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                new int[]{0x8C000000, 0x1A000000, 0x00000000, 0x4D000000, 0xD9000000});
+    }
 
     private HorizontalScrollView rowScroll() {
         HorizontalScrollView s = new HorizontalScrollView(this);
@@ -829,7 +841,7 @@ public class HomeActivity extends Activity {
     private String warmFor;                 // input whose session is open
     private boolean warmVideo;              // ...and has a picture
     private int previewGen;                 // bumps on every enter/leave, so stale steps do nothing
-    private static final long REVEAL_MS = 450, COVER_MS = 300, SETTLE_MS = 400;
+    private static final long REVEAL_MS = 400, COVER_MS = 250, SETTLE_MS = 400;
 
     private boolean previewable(Tile t) {
         if (t.kind != Tile.Kind.INPUT || !prefs.preview() || prefs.previewOff(t.inputId)) return false;
@@ -855,7 +867,7 @@ public class HomeActivity extends Activity {
                 if (!inputId.equals(warmFor)) return;
                 warmVideo = true;
                 aerial.setHeld(false);
-                if (inputId.equals(previewFor) && previewCover.getAlpha() > 0f) {
+                if (inputId.equals(previewFor) && previewMask.getAlpha() > 0f) {
                     int gen = previewGen;
                     main.postDelayed(() -> reveal(gen), SETTLE_MS);
                 }
@@ -889,7 +901,7 @@ public class HomeActivity extends Activity {
         warmVideo = false;
         sizePreview(16f / 9f);
         tvView.setLayoutParams(pixel());
-        previewCover.setAlpha(0f);
+        previewMask.setAlpha(0f);
         previewFrame.setVisibility(View.VISIBLE);
         Log.i(TAG, "input warm " + t.inputId);
         tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
@@ -918,48 +930,52 @@ public class HomeActivity extends Activity {
         warmVideo = false;
         aerial.setHeld(false);
         if (previewFor != null) {
-            previewCover.animate().cancel();
-            previewCover.animate().alpha(1f).setDuration(COVER_MS).start();
+            previewMask.animate().cancel();
+            previewMask.animate().alpha(1f).setDuration(COVER_MS).start();
         }
     }
 
-    /** Focus rests on an input tile: freeze the aerial, blur it, open the box onto the input's picture. */
+    /** Focus rests on an input tile: blur the aerial, open the box onto the input's picture. */
     private void startPreview(Tile t) {
         if (mode != Mode.HOME || zone != Zone.DOCK || !previewable(t)) return;
         if (t.inputId.equals(previewFor)) return;
         int gen = ++previewGen;
         previewFor = t.inputId;
         ensureTvView();
-        aerial.freeze(() -> {
+        boolean warm = t.inputId.equals(warmFor);
+        Runnable open = () -> {
             if (gen != previewGen) return;
-            // The box opens filled with the same blurred frame as around it, so it is invisible at first.
-            previewCover.animate().cancel();
+            // The box opens filled with the same blurred, shaded frame as around it, so it is invisible at first.
+            previewMask.animate().cancel();
             previewCover.setImageBitmap(aerial.softFrame());
             sizePreview(16f / 9f);
-            previewCover.setAlpha(1f);
+            previewMask.setAlpha(1f);
             tvView.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
             previewFrame.setVisibility(View.VISIBLE);
-            aerial.releasePlane();
-            if (t.inputId.equals(warmFor)) {
-                if (warmVideo) main.postDelayed(() -> reveal(gen), 120);
+            if (warm) {
+                aerial.hidePlane();
+                if (warmVideo) main.postDelayed(() -> reveal(gen), 80);
             } else {
+                aerial.releasePlane();
                 warmFor = t.inputId;            // first visit: open it now, it stays open after
                 warmVideo = false;
                 Log.i(TAG, "input tune " + t.inputId);
                 tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
             }
-        });
+        };
+        if (warm) aerial.blurOver(open);
+        else aerial.freeze(open);
     }
 
     private void reveal(int gen) {
         if (gen != previewGen || previewFor == null) return;
-        previewCover.animate().cancel();
-        previewCover.animate().alpha(0f).setStartDelay(0).setDuration(REVEAL_MS).start();
+        previewMask.animate().cancel();
+        previewMask.animate().alpha(0f).setStartDelay(0).setDuration(REVEAL_MS).start();
     }
 
     /**
-     * Focus left the input tile: the box melts back into the blurred frame, the aerial returns to its plane paused
-     * on that same frame, unblurs, and plays on. The input's session stays open behind it.
+     * Focus left the input tile: the box melts back into the blurred frame, the aerial grows back under it on the
+     * same frame, and the blur fades off the real video. The input's session stays open behind it.
      */
     private void stopPreview() {
         main.removeCallbacks(pendingPreview);
@@ -967,19 +983,33 @@ public class HomeActivity extends Activity {
         int gen = ++previewGen;
         previewFor = null;
         if (!aerial.isFrozen()) return;
-        previewCover.animate().cancel();
-        previewCover.animate().alpha(1f).setStartDelay(0).setDuration(COVER_MS).withEndAction(() -> {
+        Runnable back = () -> {
             if (gen != previewGen) return;
-            aerial.restore(() -> {
-                if (gen != previewGen) return;
-                // The aerial is back on top of the input: the box can go, it only shows the aerial now.
-                if (tvView != null) tvView.setLayoutParams(pixel());
-                previewCover.setAlpha(0f);
-                aerial.unblur(() -> {
-                    if (gen == previewGen) aerial.thaw();
+            if (aerial.isPlaneHidden() || !aerial.isStillUp()) {
+                aerial.unblurOff(() -> {
+                    if (gen != previewGen) return;
+                    // The aerial is back over the input: the box only shows it now, so it can go.
+                    if (tvView != null) tvView.setLayoutParams(pixel());
+                    previewMask.setAlpha(0f);
                 });
-            });
-        }).start();
+            } else {
+                aerial.restore(() -> {
+                    if (gen != previewGen) return;
+                    if (tvView != null) tvView.setLayoutParams(pixel());
+                    previewMask.setAlpha(0f);
+                    aerial.unblur(() -> {
+                        if (gen == previewGen) aerial.thaw();
+                    });
+                });
+            }
+        };
+        if (previewFrame.getVisibility() != View.VISIBLE || tvView == null
+                || tvView.getLayoutParams().width <= 1) {
+            back.run();                     // left before the box opened
+            return;
+        }
+        previewMask.animate().cancel();
+        previewMask.animate().alpha(1f).setStartDelay(0).setDuration(COVER_MS).withEndAction(back).start();
     }
 
     /** Fits the preview to the input's aspect ratio in the space between the clock and the dock. */
@@ -1002,13 +1032,19 @@ public class HomeActivity extends Activity {
 
     /** Places the cover's blurred frame so it lines up with the same pixels in the background. */
     private void alignCover() {
-        android.graphics.drawable.Drawable d = previewCover.getDrawable();
-        if (d == null || root.getWidth() == 0) return;
+        if (root.getWidth() == 0) return;
         FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) previewFrame.getLayoutParams();
-        android.graphics.Matrix m = new android.graphics.Matrix();
-        m.setScale(root.getWidth() / (float) d.getIntrinsicWidth(), root.getHeight() / (float) d.getIntrinsicHeight());
-        m.postTranslate(-(root.getWidth() - lp.width) / 2f, -lp.topMargin);
-        previewCover.setImageMatrix(m);
+        android.graphics.drawable.Drawable d = previewCover.getDrawable();
+        if (d != null && d.getIntrinsicWidth() > 0) {
+            android.graphics.Matrix m = new android.graphics.Matrix();
+            m.setScale(root.getWidth() / (float) d.getIntrinsicWidth(), root.getHeight() / (float) d.getIntrinsicHeight());
+            m.postTranslate(-(root.getWidth() - lp.width) / 2f, -lp.topMargin);
+            previewCover.setImageMatrix(m);
+        }
+        FrameLayout.LayoutParams sl = new FrameLayout.LayoutParams(root.getWidth(), root.getHeight());
+        previewShade.setLayoutParams(sl);
+        previewShade.setTranslationX(-(root.getWidth() - lp.width) / 2f);
+        previewShade.setTranslationY(-lp.topMargin);
     }
 
     // ---- all apps ----
