@@ -81,7 +81,8 @@ public class HomeActivity extends Activity {
     private LinearLayout contentRow, dockBox;
     private FrameLayout previewFrame;
     private TvView tvView;
-    private TextView previewLabel, previewStatus;
+    private TextView previewLabel;
+    private ImageView previewCover;   // the paused aerial's piece behind the box, fading out as the input appears
     private View drawerBg;
     private LinearLayout drawerHeader;
     private ScrollView drawerScroll;
@@ -324,9 +325,9 @@ public class HomeActivity extends Activity {
         styleGear(false);
 
         // Opaque cover over the picture until the input sends video; it fades, the video surface cannot.
-        previewStatus = Ui.text(this, Ui.medium(), 15, Ui.TEXT_DIM);
-        previewStatus.setGravity(Gravity.CENTER);
-        previewFrame.addView(previewStatus, new FrameLayout.LayoutParams(-1, -1));
+        previewCover = new ImageView(this);
+        previewCover.setScaleType(ImageView.ScaleType.MATRIX);
+        previewFrame.addView(previewCover, new FrameLayout.LayoutParams(-1, -1));
         previewLabel = Ui.text(this, Ui.semibold(), 13, Ui.TEXT);
         previewLabel.setBackground(Ui.rounded(0x99000000, px(8)));
         previewLabel.setPadding(px(10), px(5), px(10), px(5));
@@ -767,6 +768,7 @@ public class HomeActivity extends Activity {
                 tvView.setCallback(new TvView.TvInputCallback() {
                     @Override public void onVideoAvailable(String inputId) {
                         Log.i(TAG, "preview video available");
+                        previewCover.animate().alpha(0f).setStartDelay(120).setDuration(350).start();
                     }
 
                     @Override public void onVideoSizeChanged(String inputId, int w, int h) {
@@ -790,7 +792,9 @@ public class HomeActivity extends Activity {
             main.removeCallbacks(closeInput);
             previewFor = t.inputId;
             previewLabel.setText(t.label);
-            previewStatus.setText("");
+            previewCover.animate().cancel();
+            previewCover.setImageBitmap(null);
+            previewCover.setAlpha(1f);
             previewFrame.animate().cancel();
             previewFrame.setAlpha(1f);
             sizePreview(16f / 9f);
@@ -800,6 +804,10 @@ public class HomeActivity extends Activity {
             String inputId = t.inputId;
             aerial.pauseForInput(() -> {
                 if (!inputId.equals(previewFor) || tvView == null) return;
+                android.graphics.Matrix m = new android.graphics.Matrix();
+                m.setTranslate(-previewFrame.getLeft(), -previewFrame.getTop());
+                previewCover.setImageMatrix(m);
+                previewCover.setImageBitmap(aerial.stillFrame());
                 Log.i(TAG, "preview tune " + inputId);
                 tvView.tune(inputId, TvContract.buildChannelUriForPassthroughInput(inputId));
             });
