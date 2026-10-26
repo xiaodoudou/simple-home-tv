@@ -34,12 +34,22 @@ final class Prefs {
     boolean preview() { return p.getBoolean("preview", true); }
     void setPreview(boolean on) { p.edit().putBoolean("preview", on).apply(); }
 
-    /** Screensaver shows the Google Photos album (when set) instead of aerial videos. */
+    Set<String> aerialIds() {
+        return p.contains("aerial_ids") ? set("aerial_ids") : new HashSet<>(Aerials.DEFAULT);
+    }
+
+    void setAerialIds(Set<String> ids) { putSet("aerial_ids", ids); }
+
+    boolean aerialShuffle() { return p.getBoolean("aerial_shuffle", true); }
+    void setAerialShuffle(boolean on) { p.edit().putBoolean("aerial_shuffle", on).apply(); }
+
+    /** Null until chosen: the default then follows the screen. */
+    Boolean aerial4k() { return p.contains("aerial_4k") ? p.getBoolean("aerial_4k", false) : null; }
+    void setAerial4k(boolean on) { p.edit().putBoolean("aerial_4k", on).apply(); }
+
+    /** Screensaver shows the user's photos (when there are any) instead of aerial videos. */
     boolean screensaverPhotos() { return p.getBoolean("ss_photos", false); }
     void setScreensaverPhotos(boolean on) { p.edit().putBoolean("ss_photos", on).apply(); }
-
-    String photosAlbum() { return p.getString("photos_album", ""); }
-    void setPhotosAlbum(String url) { p.edit().putString("photos_album", url == null ? "" : url.trim()).apply(); }
 
     boolean screensaverClock() { return p.getBoolean("ss_clock", true); }
     void setScreensaverClock(boolean on) { p.edit().putBoolean("ss_clock", on).apply(); }

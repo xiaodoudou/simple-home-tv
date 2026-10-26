@@ -56,6 +56,9 @@ public class SettingsActivity extends Activity {
     private TextView pageTitle;
     private int page, rowFocus;
     private boolean inRows;
+    private boolean clipPage;              // the aerial clip list, opened from the Home page
+    private int rowFocusAfterShow = -1;
+    private static final int AERIAL_ROW = 2;   // "Aerial videos" on the Home page
     private final OkKey okKey = new OkKey();
 
     @Override
@@ -154,10 +157,11 @@ public class SettingsActivity extends Activity {
 
     private void showPage(int p) {
         page = p;
-        pageTitle.setText(PAGES[p]);
+        if (p != 0) clipPage = false;
+        pageTitle.setText(clipPage ? "Aerial videos" : PAGES[p]);
         rows.clear();
         switch (p) {
-            case 0: homeRows(); break;
+            case 0: if (clipPage) clipRows(); else homeRows(); break;
             case 1: networkRows(); break;
             case 2: displayRows(); break;
             case 3: inputRows(); break;
@@ -185,6 +189,16 @@ public class SettingsActivity extends Activity {
                 rowsNames[prefs.dockRows()], () -> prefs.setDockRows((prefs.dockRows() + 1) % 3)));
         rows.add(new Row("Aerial video background", "Apple's aerial footage, downloaded once and kept on the device",
                 onOff(prefs.aerial()), () -> prefs.setAerial(!prefs.aerial())));
+        int chosen = Aerials.chosen(this, prefs.aerialIds()).size();
+        rows.add(new Row("Aerial videos", "Pick which ones play", chosen + " of " + Aerials.all(this).size(), () -> {
+            clipPage = true;
+            rowFocusAfterShow = 0;
+        }));
+        rows.add(new Row("Aerial order", null, prefs.aerialShuffle() ? "Shuffle" : "List order",
+                () -> prefs.setAerialShuffle(!prefs.aerialShuffle())));
+        boolean uhd = AerialBackground.use4k(this);
+        rows.add(new Row("Aerial quality", "4K clips are about 330 MB each, Full HD about 230 MB",
+                uhd ? "4K" : "Full HD", () -> prefs.setAerial4k(!uhd)));
         rows.add(new Row("Show app content on focus", "Continue watching and channels above the dock, with artwork",
                 onOff(prefs.spotlight()), () -> prefs.setSpotlight(!prefs.spotlight())));
         long mb = dirSize(new File(getCacheDir(), "aerial")) / (1024 * 1024);
@@ -193,6 +207,19 @@ public class SettingsActivity extends Activity {
             if (fs != null) for (File f : fs) //noinspection ResultOfMethodCallIgnored
                 f.delete();
         }));
+    }
+
+    private void clipRows() {
+        java.util.Set<String> ids = prefs.aerialIds();
+        boolean uhd = AerialBackground.use4k(this);
+        for (Aerials.Clip clip : Aerials.all(this)) {
+            boolean on = ids.contains(clip.id);
+            rows.add(new Row(clip.name, (uhd ? clip.mb4k : clip.mb) + " MB", on ? "✓" : null, () -> {
+                java.util.Set<String> now = prefs.aerialIds();
+                if (!now.remove(clip.id)) now.add(clip.id);
+                if (!now.isEmpty()) prefs.setAerialIds(now);
+            }));
+        }
     }
 
     private void networkRows() {
@@ -251,44 +278,18 @@ public class SettingsActivity extends Activity {
                 .startsWith(getPackageName() + "/");
         rows.add(new Row("Use Simple Home's screensaver", ours ? null : "Pick \"Simple Home\" in the TV's screensaver list",
                 ours ? "On" : "Off", () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
-        String album = prefs.photosAlbum();
-        boolean hasAlbum = GooglePhotos.looksLikeAlbum(album);
-        rows.add(new Row("Show", hasAlbum ? null : "Add a Google Photos album to show your photos",
-                prefs.screensaverPhotos() && hasAlbum ? "Google Photos" : "Aerial videos",
-                () -> prefs.setScreensaverPhotos(hasAlbum && !prefs.screensaverPhotos())));
-        rows.add(new Row("Google Photos album", "Google Photos: open an album, then Share, Create link",
-                hasAlbum ? "Set" : "Not set", this::askAlbum));
+        int photos = Photos.list(this).size();
+        rows.add(new Row("Show", photos == 0 ? "No photos on the TV yet" : null,
+                prefs.screensaverPhotos() && photos > 0 ? "Your photos" : "Aerial videos",
+                () -> prefs.setScreensaverPhotos(photos > 0 && !prefs.screensaverPhotos())));
+        rows.add(new Row("Your photos", "Private: chosen in Google Photos on your PC with google_photos_to_tv.py, then kept on the TV",
+                photos + " photos", null));
         rows.add(new Row("Clock", "Time and date in the corner", onOff(prefs.screensaverClock()),
                 () -> prefs.setScreensaverClock(!prefs.screensaverClock())));
         rows.add(new Row("Start now", null, null, () -> startSafe(new Intent(Intent.ACTION_MAIN)
                 .setClassName("com.android.systemui", "com.android.systemui.Somnambulator")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
         rows.add(new Row("When it starts", "Set by the TV", null, () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
-    }
-
-    private void askAlbum() {
-        android.widget.EditText field = new android.widget.EditText(this);
-        field.setSingleLine(true);
-        field.setHint("https://photos.app.goo.gl/...");
-        field.setText(prefs.photosAlbum());
-        field.setSelection(field.getText().length());
-        new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
-                .setTitle("Google Photos album link")
-                .setView(field)
-                .setPositiveButton("Save", (d, w) -> {
-                    String url = field.getText().toString().trim();
-                    if (!url.isEmpty() && !GooglePhotos.looksLikeAlbum(url)) {
-                        android.widget.Toast.makeText(this, "That is not a Google Photos album link", android.widget.Toast.LENGTH_LONG).show();
-                        return;
-                    }
-                    prefs.setPhotosAlbum(url);
-                    prefs.setScreensaverPhotos(!url.isEmpty());
-                    int keep = rowFocus;
-                    showPage(page);
-                    focusRow(keep);
-                })
-                .setNegativeButton("Cancel", null)
-                .show();
     }
 
     private void aboutRows() {
@@ -407,7 +408,8 @@ public class SettingsActivity extends Activity {
         }
         if (k == KeyEvent.KEYCODE_BACK || k == KeyEvent.KEYCODE_ESCAPE) {
             if (!down && !e.isCanceled()) {
-                if (inRows) focusCat(page);
+                if (clipPage) leaveClipPage();
+                else if (inRows) focusCat(page);
                 else finish();
             }
             return true;
@@ -426,7 +428,8 @@ public class SettingsActivity extends Activity {
                 if (!inRows) focusRow(firstActionable());
                 return true;
             case KeyEvent.KEYCODE_DPAD_LEFT:
-                if (inRows) focusCat(page);
+                if (clipPage) leaveClipPage();
+                else if (inRows) focusCat(page);
                 return true;
             default:
                 return super.dispatchKeyEvent(e);
@@ -445,10 +448,17 @@ public class SettingsActivity extends Activity {
         if (rowFocus >= rows.size()) return;
         Row r = rows.get(rowFocus);
         if (r.action == null) return;
-        r.action.run();
         int keep = rowFocus;
+        rowFocusAfterShow = -1;
+        r.action.run();
         showPage(page);
-        focusRow(keep);
+        focusRow(rowFocusAfterShow >= 0 ? rowFocusAfterShow : keep);
+    }
+
+    private void leaveClipPage() {
+        clipPage = false;
+        showPage(0);
+        focusRow(AERIAL_ROW);
     }
 
     // ---- helpers ----

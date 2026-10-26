@@ -1,14 +1,14 @@
 package com.simplehometv;
 
 import android.content.Context;
-import android.graphics.SurfaceTexture;
 import android.graphics.drawable.GradientDrawable;
 import android.media.MediaPlayer;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.view.Surface;
-import android.view.TextureView;
+import android.view.Display;
+import android.view.SurfaceHolder;
+import android.view.SurfaceView;
 import android.view.View;
 import android.widget.FrameLayout;
 
@@ -19,84 +19,77 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 /**
- * A looping, muted aerial video behind the home. The first run streams a clip while another downloads into
- * the cache; later runs play cached clips locally. A dark gradient shows until a frame is ready, and stays if
- * nothing plays. Drawn on a TextureView so it composites under the UI like any other view.
+ * Apple's aerial videos behind the home and in the screensaver: the clips the user chose, one after another,
+ * in list order or shuffled. Clips are downloaded once into the cache and played from there; the very first
+ * one streams while it downloads. A dark gradient covers the video until a frame is ready.
+ * A SurfaceView, not a TextureView: its frames go straight to the TV's video plane at the panel's full
+ * resolution (4K), while the UI is drawn at 1080p.
  */
-public class AerialBackground extends FrameLayout implements TextureView.SurfaceTextureListener {
+public class AerialBackground extends FrameLayout implements SurfaceHolder.Callback {
 
     private static final String TAG = "Aerial";
-    private static final int KEEP = 2;   // clips kept in the cache
+    private static final int KEEP = 3;                  // clips kept in the cache
+    private static final long MIN_FREE = 2L << 30;      // leave the device at least 2 GB
 
-    // Plain http on purpose: sylvan's certificate chains to an Apple root that Android TV trust stores lack.
-    static final String[] CLIPS = {
-            "http://sylvan.apple.com/Videos/comp_A105_C003_0212CT_FLARE_v10_SDR_PS_FINAL_20180711_SDR_2K_AVC.mov",
-            "http://sylvan.apple.com/Videos/comp_GMT026_363A_103NC_E1027_KOREA_JAPAN_NIGHT_v18_SDR_PS_20180907_SDR_2K_AVC.mov",
-            "http://sylvan.apple.com/Videos/SE_A016_C009_SDR_20190717_SDR_2K_AVC.mov",
-            "http://sylvan.apple.com/Videos/comp_GL_G002_C002_PSNK_v03_SDR_PS_20180925_SDR_2K_AVC.mov",
-            "http://sylvan.apple.com/Videos/PA_A001_C007_SDR_20190717_SDR_2K_AVC.mov"
-    };
-    private static final long MIN_FREE = 2L << 30;   // leave the device at least 2 GB
-
-    private final TextureView video;
-    private final View fallback;
-    private final File dir;
-    private static final ExecutorService io = Executors.newSingleThreadExecutor();   // shared: the home and the screensaver download into the same cache
-    private final Handler main = new Handler(Looper.getMainLooper());
-    private MediaPlayer mp;
-    // TVs have one or two video decoders: the screensaver's player takes over from the home's.
-    private static AerialBackground playing;
-    private Surface surface;
+    // Shared: the home and the screensaver use the same cache, and TVs have few video decoders.
+    private static final ExecutorService io = Executors.newSingleThreadExecutor();
     private static boolean downloading;
+    private static AerialBackground playing;
+    private static String lastId;                       // so the order carries on between home and screensaver
+
+    private final SurfaceView video;
+    private final View cover;
+    private final File dir;
+    private final Prefs prefs;
+    private final Handler main = new Handler(Looper.getMainLooper());
+    private final Random random = new Random();
+    private MediaPlayer mp;
+    private SurfaceHolder holder;
     private boolean active = true;
     private int retries;
 
     public AerialBackground(Context c) {
         super(c);
         dir = new File(c.getCacheDir(), "aerial");
-        fallback = new View(c);
-        fallback.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
-                new int[]{0xFF141A20, 0xFF090B10, 0xFF05060A}));
-        addView(fallback, full());
-        video = new TextureView(c);
-        video.setOpaque(true);
-        video.setAlpha(0f);
+        prefs = new Prefs(c);
+        video = new SurfaceView(c);
+        video.getHolder().addCallback(this);
         addView(video, full());
-        video.setSurfaceTextureListener(this);
+        cover = new View(c);
+        cover.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR,
+                new int[]{0xFF141A20, 0xFF090B10, 0xFF05060A}));
+        addView(cover, full());
     }
 
-    @Override public void onSurfaceTextureAvailable(SurfaceTexture st, int w, int h) {
-        surface = new Surface(st);
-        playCachedOrFetch();
+    @Override public void surfaceCreated(SurfaceHolder h) {
+        holder = h;
+        playNext();
     }
 
-    @Override public void onSurfaceTextureSizeChanged(SurfaceTexture st, int w, int h) { }
+    @Override public void surfaceChanged(SurfaceHolder h, int format, int w, int height) { }
 
-    @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture st) {
+    @Override public void surfaceDestroyed(SurfaceHolder h) {
         release();
-        if (surface != null) {
-            surface.release();
-            surface = null;
-        }
-        return true;
+        holder = null;
     }
-
-    @Override public void onSurfaceTextureUpdated(SurfaceTexture st) { }
 
     public void stop() {
-        video.animate().cancel();
-        video.setAlpha(0f);
+        cover.animate().cancel();
+        cover.setAlpha(1f);
         release();
     }
 
     /** Resume after {@link #stop()} if the surface is still around. */
     public void resume() {
-        if (surface != null && mp == null) playCachedOrFetch();
+        if (holder != null && mp == null) playNext();
     }
 
     /** Off leaves only the gradient. */
@@ -107,40 +100,63 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
         else stop();
     }
 
-    private void playCachedOrFetch() {
-        if (!active) return;
-        List<File> cached = cachedClips();
-        if (!cached.isEmpty()) {
-            play(cached.get((int) (Math.random() * cached.size())).getPath(), true);
-            if (cached.size() < KEEP) fetchNext(-1);
-        } else {
-            int streamed = (int) (System.currentTimeMillis() / 60_000 % CLIPS.length);
-            play(CLIPS[streamed], false);
-            fetchNext(streamed);
+    /** Whether to use the 4K files: the user's choice, else whether the screen is 4K. */
+    static boolean use4k(Context c) {
+        Boolean chosen = new Prefs(c).aerial4k();
+        if (chosen != null) return chosen;
+        try {
+            Display d = ((android.hardware.display.DisplayManager) c.getSystemService(Context.DISPLAY_SERVICE))
+                    .getDisplay(Display.DEFAULT_DISPLAY);
+            for (Display.Mode m : d.getSupportedModes()) if (m.getPhysicalWidth() >= 3840) return true;
+        } catch (Exception ignored) {
         }
+        return false;
+    }
+
+    private void playNext() {
+        if (!active || holder == null) return;
+        boolean uhd = use4k(getContext());
+        List<Aerials.Clip> chosen = Aerials.chosen(getContext(), prefs.aerialIds());
+        if (chosen.isEmpty()) return;
+        List<String> ready = new ArrayList<>();
+        for (Aerials.Clip clip : chosen) if (fileFor(clip, uhd).length() > 0) ready.add(clip.id);
+        String id = Aerials.next(ready, lastId, prefs.aerialShuffle(), random);
+        if (id != null) {
+            lastId = id;
+            play(fileFor(byId(chosen, id), uhd).getPath(), true);
+        } else {
+            Aerials.Clip first = chosen.get(prefs.aerialShuffle() ? random.nextInt(chosen.size()) : 0);
+            lastId = first.id;
+            play(uhd ? first.url4k : first.url, false);
+        }
+        fetchMore(chosen, uhd, ready.size());
     }
 
     private void play(String source, boolean local) {
-        if (surface == null) return;
+        if (holder == null) return;
         release();
         if (playing != null && playing != this) playing.release();
         playing = this;
         try {
             mp = new MediaPlayer();
-            mp.setSurface(surface);
+            mp.setDisplay(holder);
             mp.setVolume(0f, 0f);
-            mp.setLooping(true);
             mp.setDataSource(source);
+            mp.setOnPreparedListener(p -> {
+                retries = 0;
+                p.start();
+            });
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
-                    video.animate().alpha(1f).setDuration(800).start();
+                    cover.animate().alpha(0f).setDuration(900).start();
                 }
                 return false;
             });
+            mp.setOnCompletionListener(p -> cover.animate().alpha(1f).setDuration(500).withEndAction(this::playNext).start());
             mp.setOnErrorListener((p, w, e) -> {
                 Log.w(TAG, "can't play " + source + " (" + w + "/" + e + ")");
                 release();
-                video.setAlpha(0f);
+                cover.setAlpha(1f);
                 boolean broken = e == MediaPlayer.MEDIA_ERROR_MALFORMED || e == MediaPlayer.MEDIA_ERROR_UNSUPPORTED;
                 if (local && broken) {
                     //noinspection ResultOfMethodCallIgnored
@@ -151,10 +167,6 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
                 }
                 return true;
             });
-            mp.setOnPreparedListener(p -> {
-                retries = 0;
-                p.start();
-            });
             mp.prepareAsync();
         } catch (Exception e) {
             Log.w(TAG, "play failed: " + e);
@@ -162,29 +174,29 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
         }
     }
 
-    /** Downloads one clip not yet cached, other than {@code skip}; plays it if nothing else is playing. */
-    private void fetchNext(int skip) {
-        if (downloading) return;
+    /** Downloads chosen clips that are not cached yet, up to {@link #KEEP}, starting after the one playing. */
+    private void fetchMore(List<Aerials.Clip> chosen, boolean uhd, int ready) {
+        if (downloading || ready >= Math.min(KEEP, chosen.size())) {
+            if (!downloading) trim(chosen, uhd);
+            return;
+        }
         downloading = true;
+        int start = Math.max(0, indexOf(chosen, lastId));
         io.execute(() -> {
-            File done = null;
             try {
                 dir.mkdirs();
-                for (int idx = 0; idx < CLIPS.length && done == null; idx++) {
-                    File f = fileFor(idx);
-                    if (idx == skip || f.exists()) continue;
+                trim(chosen, uhd);
+                int have = ready;
+                for (int k = 0; k < chosen.size() && have < KEEP; k++) {
+                    Aerials.Clip clip = chosen.get((start + 1 + k) % chosen.size());
+                    File f = fileFor(clip, uhd);
+                    if (f.length() > 0) continue;
                     if (dir.getUsableSpace() < MIN_FREE) break;
-                    if (download(CLIPS[idx], f)) done = f;
+                    if (download(uhd ? clip.url4k : clip.url, f)) have++;
                 }
-                trim();
-            } catch (Exception e) {
-                Log.w(TAG, "fetch failed: " + e);
+            } finally {
+                main.post(() -> downloading = false);
             }
-            File landed = done;
-            main.post(() -> {
-                downloading = false;
-                if (landed != null && active && mp == null) play(landed.getPath(), true);
-            });
         });
     }
 
@@ -214,25 +226,32 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
         }
     }
 
-    private List<File> cachedClips() {
-        List<File> out = new ArrayList<>();
+    /** Deletes cached clips that are no longer chosen, or of the other quality, and stray partial downloads. */
+    private void trim(List<Aerials.Clip> chosen, boolean uhd) {
+        Set<String> keep = new HashSet<>();
+        for (Aerials.Clip clip : chosen) keep.add(fileFor(clip, uhd).getName());
         File[] files = dir.listFiles();
-        if (files != null) for (File f : files) if (f.getName().endsWith(".mov") && f.length() > 0) out.add(f);
-        return out;
-    }
-
-    /** Keeps at most {@link #KEEP} clips (oldest go first). */
-    private void trim() {
-        List<File> cached = cachedClips();
-        cached.sort((a, b) -> Long.compare(a.lastModified(), b.lastModified()));
-        while (cached.size() > KEEP) {
-            //noinspection ResultOfMethodCallIgnored
-            cached.remove(0).delete();
+        if (files == null) return;
+        for (File f : files) {
+            boolean partial = f.getName().endsWith(".part") && !downloading;
+            if (partial || (!f.getName().endsWith(".part") && !keep.contains(f.getName()))) {
+                //noinspection ResultOfMethodCallIgnored
+                f.delete();
+            }
         }
     }
 
-    private File fileFor(int idx) {
-        return new File(dir, "clip" + idx + ".mov");
+    private File fileFor(Aerials.Clip clip, boolean uhd) {
+        return new File(dir, clip.id + (uhd ? "-4k" : "-hd") + ".mov");
+    }
+
+    private static Aerials.Clip byId(List<Aerials.Clip> list, String id) {
+        return list.get(Math.max(0, indexOf(list, id)));
+    }
+
+    private static int indexOf(List<Aerials.Clip> list, String id) {
+        for (int i = 0; i < list.size(); i++) if (list.get(i).id.equals(id)) return i;
+        return -1;
     }
 
     private void release() {
@@ -243,7 +262,7 @@ public class AerialBackground extends FrameLayout implements TextureView.Surface
         }
     }
 
-    private LayoutParams full() {
+    private static LayoutParams full() {
         return new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT);
     }
 }

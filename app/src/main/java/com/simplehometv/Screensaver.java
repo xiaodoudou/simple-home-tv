@@ -8,7 +8,6 @@ import android.os.Handler;
 import android.os.Looper;
 import android.service.dreams.DreamService;
 import android.text.format.DateFormat;
-import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.FrameLayout;
@@ -79,7 +78,7 @@ public class Screensaver extends DreamService {
         setContentView(root);
         running = true;
         updateClock();
-        if (prefs.screensaverPhotos() && GooglePhotos.looksLikeAlbum(prefs.photosAlbum())) loadAlbum(prefs.photosAlbum());
+        if (prefs.screensaverPhotos()) loadPhotos();
     }
 
     @Override public void onDetachedFromWindow() {
@@ -97,11 +96,11 @@ public class Screensaver extends DreamService {
         return v;
     }
 
-    /** Photos replace the aerial video once the first one is ready; until then, or if the album fails, video plays. */
-    private void loadAlbum(String url) {
-        DisplayMetrics m = getResources().getDisplayMetrics();
+    /** Photos replace the aerial video once the first one is ready; until then, or without photos, video plays. */
+    private void loadPhotos() {
         new Thread(() -> {
-            List<String> found = GooglePhotos.album(url, Math.max(m.widthPixels, 1920), Math.max(m.heightPixels, 1080));
+            List<String> found = new ArrayList<>();
+            for (java.io.File f : Photos.list(this)) found.add(f.getPath());
             Collections.shuffle(found);
             main.post(() -> {
                 if (!running || found.isEmpty()) return;
@@ -115,7 +114,7 @@ public class Screensaver extends DreamService {
         if (!running || photos.isEmpty()) return;
         String url = photos.get(photoIndex++ % photos.size());
         new Thread(() -> {
-            Bitmap b = ImageCache.load(this, url, 1920);
+            Bitmap b = Photos.decode(url, 1920);
             main.post(() -> {
                 if (!running) return;
                 if (b != null) crossfade(b);
