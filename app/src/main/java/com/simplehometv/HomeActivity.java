@@ -63,6 +63,7 @@ public class HomeActivity extends Activity {
     private static final int VPAD = 10;         // room above and below a row for a focused tile's zoom
     private static final int HEADER = 48;       // drawer title height above the lifted bar
     private static final float ZOOM = 1f;    // focus is the ring alone, tiles keep their size
+    private static final long LIFT_MS = 560;    // the dock's trip between the home and the All apps bar
     private static final int CAPTION = 0x80F5F5F7;
 
     private float dp;
@@ -107,6 +108,7 @@ public class HomeActivity extends Activity {
     private boolean resumed;
     private Zone zone = Zone.DOCK;
     private int dockFocus, contentFocus, drawerFocus;
+    private int drawerGen;                      // bumps on every open and close, so a late open step does nothing
     private String spotFor;                     // tile id focused for content
     private String shownFor;                    // tile id whose content row is drawn
     private int spotGen;                        // bumps on every row change, so stale fades do nothing
@@ -125,6 +127,7 @@ public class HomeActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newFixedThreadPool(3);
     private final Map<String, Drawable> banners = new HashMap<>();
+    private final Map<String, Drawable> icons = new HashMap<>();
     private final Map<String, Integer> brands = new HashMap<>();
     private final Map<String, Spot> spots = new HashMap<>();
     private final Map<String, List<Content.Source>> sourcesByPkg = new HashMap<>();
@@ -190,6 +193,7 @@ public class HomeActivity extends Activity {
         boolean onGear = mode == Mode.HOME && zone == Zone.GEAR;
         pins = new Pins(prefs.pins());
         load();
+        prefetchArt();
         if (mode == Mode.MENU) closeMenu();
         if (mode == Mode.DRAWER) resetDrawer();
         mode = Mode.HOME;
@@ -221,6 +225,7 @@ public class HomeActivity extends Activity {
         resumed = false;
         main.removeCallbacks(tick);
         main.removeCallbacks(holdTimer);
+        main.removeCallbacks(afterLanding);
         okKey.reset();
         main.removeCallbacks(pendingPreview);
         aerial.thaw();
@@ -508,6 +513,7 @@ public class HomeActivity extends Activity {
     }
 
     private void focusDock(int i) {
+        main.removeCallbacks(afterLanding);
         if (dockViews.isEmpty()) return;
         zone = Zone.DOCK;
         styleGear(false);
@@ -1066,27 +1072,39 @@ public class HomeActivity extends Activity {
         mode = Mode.DRAWER;
         stopPreview();
         main.removeCallbacks(pendingSpot);
+        main.removeCallbacks(afterLanding);
         spotFor = null;
-        clearSpot();
         renderGrid();
         drawerScroll.scrollTo(0, 0);
-        for (View v : new View[]{drawerBg, drawerHeader, drawerScroll}) {
+        for (View v : new View[]{drawerBg, drawerHeader}) {
             v.setVisibility(View.VISIBLE);
             v.setAlpha(0f);
         }
-        drawerBg.animate().alpha(1f).setDuration(320).start();
-        drawerHeader.animate().alpha(1f).setStartDelay(140).setDuration(260).start();
+        drawerScroll.setVisibility(View.VISIBLE);
         drawerScroll.setAlpha(1f);
-        for (View v : new View[]{clock, date, gear}) v.animate().alpha(0f).setDuration(160).start();
-        dockScroll.animate().alpha(1f).translationY(liftedDockY()).setDuration(460).setInterpolator(Ui.EASE).start();
-        for (int r = 0; r < gridRows.size(); r++) {
-            View row = gridRows.get(r);
+        for (View row : gridRows) {
             row.setAlpha(0f);
-            row.setTranslationY(px(56));
-            row.animate().alpha(1f).translationY(0).setStartDelay(120 + 40L * Math.min(r, 8))
-                    .setDuration(420).setInterpolator(Ui.EASE).start();
+            row.setTranslationY(px(24));
         }
-        focusDrawer(gridTiles.isEmpty() ? dockTiles.size() - 1 : from >= 0 ? gridTileBelow(from) : dockTiles.size());
+        drawerFocus = gridTiles.isEmpty() ? dockTiles.size() - 1 : from >= 0 ? gridTileBelow(from) : dockTiles.size();
+        // The new grid is laid out and drawn in the coming frame. Moving only after that frame keeps its cost from
+        // swallowing the start of the motion, which made the dock jump.
+        int gen = ++drawerGen;
+        root.postOnAnimation(() -> root.postOnAnimation(() -> {
+            if (gen != drawerGen) return;
+            focusDrawer(drawerFocus);
+            fadeOutSpot();
+            drawerBg.animate().alpha(1f).setStartDelay(0).setDuration(400).start();
+            drawerHeader.animate().alpha(1f).setStartDelay(320).setDuration(300).start();
+            for (View v : new View[]{clock, date, gear}) v.animate().alpha(0f).setStartDelay(0).setDuration(200).start();
+            dockScroll.animate().alpha(1f).translationY(liftedDockY()).setStartDelay(0).setDuration(LIFT_MS)
+                    .setInterpolator(Ui.GLIDE).start();
+            for (int r = 0; r < gridRows.size(); r++) {
+                // Each row comes in once the rising bar has passed it, so tiles never cross.
+                gridRows.get(r).animate().alpha(1f).translationY(0).setStartDelay(320 + 40L * Math.min(r, 8))
+                        .setDuration(380).setInterpolator(Ui.EASE).start();
+            }
+        }));
     }
 
     // The bar and the grid size their tiles differently, so moving between them goes by position, not column number.
@@ -1121,17 +1139,27 @@ public class HomeActivity extends Activity {
     }
 
     private void closeDrawer(int focus) {
+        drawerGen++;
+        drawerBg.animate().alpha(0f).setStartDelay(0).setDuration(450).withEndAction(() -> drawerBg.setVisibility(View.GONE)).start();
+        drawerHeader.animate().alpha(0f).setStartDelay(0).setDuration(150).withEndAction(() -> drawerHeader.setVisibility(View.GONE)).start();
+        drawerScroll.animate().alpha(0f).setStartDelay(0).setDuration(180).withEndAction(() -> drawerScroll.setVisibility(View.GONE)).start();
+        for (View v : new View[]{clock, date, gear}) v.animate().alpha(1f).setStartDelay(250).setDuration(300).start();
+        dockScroll.animate().translationY(0).setStartDelay(0).setDuration(LIFT_MS).setInterpolator(Ui.GLIDE).start();
+        for (View v : gridViews) setFocused(v, false, true);
+        focusDock(focus);                   // still DRAWER: the ring only, the tile's content waits for the landing
         mode = Mode.HOME;
-        drawerBg.animate().alpha(0f).setDuration(300).withEndAction(() -> drawerBg.setVisibility(View.GONE)).start();
-        drawerHeader.animate().alpha(0f).setStartDelay(0).setDuration(140).withEndAction(() -> drawerHeader.setVisibility(View.GONE)).start();
-        drawerScroll.animate().alpha(0f).setDuration(160).withEndAction(() -> drawerScroll.setVisibility(View.GONE)).start();
-        for (View v : new View[]{clock, date, gear}) v.animate().alpha(1f).setDuration(260).start();
-        dockScroll.animate().translationY(0).setDuration(420).setInterpolator(Ui.EASE).start();
-        focusDock(focus);
+        main.postDelayed(afterLanding, LIFT_MS - 120);
     }
+
+    private final Runnable afterLanding = () -> {
+        if (resumed && mode == Mode.HOME && zone == Zone.DOCK && dockFocus < dockTiles.size()) {
+            onTileFocused(dockTiles.get(dockFocus));
+        }
+    };
 
     /** Leaves the drawer instantly (when returning to the home from elsewhere). */
     private void resetDrawer() {
+        drawerGen++;
         for (View v : new View[]{drawerBg, drawerHeader, drawerScroll}) {
             v.animate().cancel();
             v.setVisibility(View.GONE);
@@ -1803,21 +1831,32 @@ public class HomeActivity extends Activity {
     // ---- app art ----
 
     private Drawable appBanner(String pkg) {
-        if (banners.containsKey(pkg)) return banners.get(pkg);
-        Drawable b = null;
+        if (!banners.containsKey(pkg)) banners.put(pkg, loadBanner(pkg));
+        return banners.get(pkg);
+    }
+
+    /** A fresh copy on every call: one drawable shown by two views would fight over its bounds. */
+    private Drawable appIcon(String pkg) {
+        if (!icons.containsKey(pkg)) icons.put(pkg, loadIcon(pkg));
+        Drawable d = icons.get(pkg);
+        Drawable.ConstantState s = d != null ? d.getConstantState() : null;
+        return s != null ? s.newDrawable(getResources()) : d;
+    }
+
+    private Drawable loadBanner(String pkg) {
         try {
-            b = getPackageManager().getApplicationBanner(pkg);
+            Drawable b = getPackageManager().getApplicationBanner(pkg);
             if (b == null) {
                 Intent i = getPackageManager().getLeanbackLaunchIntentForPackage(pkg);
                 if (i != null && i.getComponent() != null) b = getPackageManager().getActivityBanner(i.getComponent());
             }
-        } catch (Exception ignored) {
+            return b;
+        } catch (Exception e) {
+            return null;
         }
-        banners.put(pkg, b);
-        return b;
     }
 
-    private Drawable appIcon(String pkg) {
+    private Drawable loadIcon(String pkg) {
         try {
             return getPackageManager().getApplicationIcon(pkg);
         } catch (Exception e) {
@@ -1825,43 +1864,71 @@ public class HomeActivity extends Activity {
         }
     }
 
+    /** Loads every app's art in the background, so opening All apps does not stall reading it from each app. */
+    private void prefetchArt() {
+        List<String> todo = new ArrayList<>();
+        for (Tile t : catalog) if (t.kind == Tile.Kind.APP && !banners.containsKey(t.pkg)) todo.add(t.pkg);
+        if (todo.isEmpty()) return;
+        io.execute(() -> {
+            Map<String, Drawable> b = new HashMap<>(), ic = new HashMap<>();
+            Map<String, Integer> c = new HashMap<>();
+            for (String pkg : todo) {
+                Drawable banner = loadBanner(pkg), icon = loadIcon(pkg);
+                b.put(pkg, banner);
+                ic.put(pkg, icon);
+                c.put(pkg, colourOf(banner != null ? banner : icon));
+            }
+            main.post(() -> {
+                for (String pkg : todo) {
+                    if (!banners.containsKey(pkg)) banners.put(pkg, b.get(pkg));
+                    if (!icons.containsKey(pkg)) icons.put(pkg, ic.get(pkg));
+                    if (!brands.containsKey(pkg)) brands.put(pkg, c.get(pkg));
+                }
+            });
+        });
+    }
+
     /** The app's dominant saturated colour, from its banner or icon. */
     private int brandColor(String pkg) {
         Integer known = brands.get(pkg);
         if (known != null) return known;
-        int avg = 0xFF2A3942;
         Drawable d = appBanner(pkg);
-        if (d == null) d = appIcon(pkg);
-        if (d != null) {
-            try {
-                Bitmap bmp = Bitmap.createBitmap(12, 7, Bitmap.Config.ARGB_8888);
-                Drawable copy = d.getConstantState() != null ? d.getConstantState().newDrawable().mutate() : d;
-                copy.setBounds(0, 0, 12, 7);
-                copy.draw(new Canvas(bmp));
-                long r = 0, g = 0, b = 0, w = 0;
-                float[] hsv = new float[3];
-                for (int y = 0; y < 7; y++) for (int x = 0; x < 12; x++) {
-                    int c = bmp.getPixel(x, y);
-                    if (Color.alpha(c) < 128) continue;
-                    Color.colorToHSV(c, hsv);
-                    if (hsv[1] < 0.25f || hsv[2] < 0.2f) continue;
-                    int ww = 1 + (int) (hsv[1] * hsv[2] * 8);
-                    r += (long) Color.red(c) * ww;
-                    g += (long) Color.green(c) * ww;
-                    b += (long) Color.blue(c) * ww;
-                    w += ww;
-                }
-                bmp.recycle();
-                if (w > 0) {
-                    Color.colorToHSV(Color.rgb((int) (r / w), (int) (g / w), (int) (b / w)), hsv);
-                    hsv[1] = Math.max(hsv[1], 0.6f);
-                    hsv[2] = Math.min(Math.max(hsv[2], 0.55f), 0.85f);
-                    avg = Color.HSVToColor(hsv);
-                }
-            } catch (Exception ignored) {
+        int c = colourOf(d != null ? d : appIcon(pkg));
+        brands.put(pkg, c);
+        return c;
+    }
+
+    /** Draws a private copy, so it is safe off the main thread. */
+    private static int colourOf(Drawable d) {
+        int avg = 0xFF2A3942;
+        if (d == null) return avg;
+        try {
+            Bitmap bmp = Bitmap.createBitmap(12, 7, Bitmap.Config.ARGB_8888);
+            Drawable copy = d.getConstantState() != null ? d.getConstantState().newDrawable().mutate() : d;
+            copy.setBounds(0, 0, 12, 7);
+            copy.draw(new Canvas(bmp));
+            long r = 0, g = 0, b = 0, w = 0;
+            float[] hsv = new float[3];
+            for (int y = 0; y < 7; y++) for (int x = 0; x < 12; x++) {
+                int c = bmp.getPixel(x, y);
+                if (Color.alpha(c) < 128) continue;
+                Color.colorToHSV(c, hsv);
+                if (hsv[1] < 0.25f || hsv[2] < 0.2f) continue;
+                int ww = 1 + (int) (hsv[1] * hsv[2] * 8);
+                r += (long) Color.red(c) * ww;
+                g += (long) Color.green(c) * ww;
+                b += (long) Color.blue(c) * ww;
+                w += ww;
             }
+            bmp.recycle();
+            if (w > 0) {
+                Color.colorToHSV(Color.rgb((int) (r / w), (int) (g / w), (int) (b / w)), hsv);
+                hsv[1] = Math.max(hsv[1], 0.6f);
+                hsv[2] = Math.min(Math.max(hsv[2], 0.55f), 0.85f);
+                avg = Color.HSVToColor(hsv);
+            }
+        } catch (Exception ignored) {
         }
-        brands.put(pkg, avg);
         return avg;
     }
 

@@ -25,6 +25,9 @@ final class Ui {
     /** Material "emphasized" easing: quick start, long gentle settle. */
     static final Interpolator EASE = new PathInterpolator(0.2f, 0f, 0f, 1f);
 
+    /** Material "standard" easing: an even glide, for long moves where {@link #EASE} would whip through the middle. */
+    static final Interpolator GLIDE = new PathInterpolator(0.4f, 0f, 0.2f, 1f);
+
     private static Typeface light, regular, medium, semibold;
 
     private Ui() { }
