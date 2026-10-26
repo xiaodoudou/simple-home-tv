@@ -21,6 +21,9 @@ public class HomeButton extends AccessibilityService {
 
     @Override protected void onServiceConnected() {
         stockHome = stockHome(this);
+        // Bound after boot or an update, the stock home may already be up with no event left to catch.
+        android.view.accessibility.AccessibilityNodeInfo front = getRootInActiveWindow();
+        if (stockHome != null && front != null && stockHome.equals(String.valueOf(front.getPackageName()))) openHome();
     }
 
     @Override protected boolean onKeyEvent(KeyEvent e) {

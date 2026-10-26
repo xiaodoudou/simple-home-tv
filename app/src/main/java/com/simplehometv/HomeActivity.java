@@ -591,7 +591,7 @@ public class HomeActivity extends Activity {
     private void onTileFocused(Tile t) {
         main.removeCallbacks(pendingSpot);
         main.removeCallbacks(pendingPreview);
-        if (t.kind != Tile.Kind.INPUT || !t.inputId.equals(previewFor)) stopPreview();
+        if (t.kind != Tile.Kind.INPUT || !(t.inputId.equals(previewFor) || t.deviceId.equals(previewFor))) stopPreview();
         if (t.kind == Tile.Kind.APP) {
             if (!t.id.equals(spotFor) && spots.get(t.pkg) == null) fadeOutSpot();
             spotFor = t.id;
@@ -978,11 +978,12 @@ public class HomeActivity extends Activity {
     /** Focus rests on an input tile: blur the aerial, open the box onto the input's picture. */
     private void startPreview(Tile t) {
         if (mode != Mode.HOME || zone != Zone.DOCK || !previewable(t)) return;
-        if (t.inputId.equals(previewFor)) return;
+        String tune = t.inputId;     // the port: waking the device would let the TV switch to it
+        if (tune.equals(previewFor)) return;
         int gen = ++previewGen;
-        previewFor = t.inputId;
+        previewFor = tune;
         ensureTvView();
-        boolean warm = t.inputId.equals(warmFor);
+        boolean warm = tune.equals(warmFor);
         Runnable open = () -> {
             if (gen != previewGen) return;
             // The box opens filled with the same blurred, shaded frame as around it, so it is invisible at first.
@@ -997,10 +998,10 @@ public class HomeActivity extends Activity {
                 if (warmVideo) main.postDelayed(() -> reveal(gen), 80);
             } else {
                 aerial.releasePlane();
-                warmFor = t.inputId;            // first visit: open it now, it stays open after
+                warmFor = tune;                 // first visit: open it now, it stays open after
                 warmVideo = false;
-                Log.i(TAG, "input tune " + t.inputId);
-                tvView.tune(t.inputId, TvContract.buildChannelUriForPassthroughInput(t.inputId));
+                Log.i(TAG, "input tune " + tune);
+                tvView.tune(tune, TvContract.buildChannelUriForPassthroughInput(tune));
             }
         };
         if (warm) aerial.blurOver(open);
@@ -1835,7 +1836,7 @@ public class HomeActivity extends Activity {
         if (startSafe(new Intent(Intent.ACTION_VIEW)
                 .setDataAndType(TvContract.Channels.CONTENT_URI, "vnd.android.cursor.dir/channel")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))) return;
-        startSafe(InputActivity.intent(this, t.inputId));
+        startSafe(InputActivity.intent(this, t.deviceId));
     }
 
     // ---- tiles ----

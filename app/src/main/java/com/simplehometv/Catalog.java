@@ -105,8 +105,8 @@ final class Catalog {
     }
 
     /**
-     * Whether the TV has an app that opens inputs. Without one (Xiaomi), the home plays inputs itself and tunes the
-     * CEC device rather than its port: tuning a port only selects the port, the device behind it stays asleep.
+     * Whether the TV has an app that opens inputs. Without one (Xiaomi), opening an input tunes the CEC device rather
+     * than its port, which wakes it; the preview keeps to the port, since a woken device takes the TV over CEC.
      */
     static boolean tvAppTakesPassthrough(Context c) {
         Intent view = new Intent(Intent.ACTION_VIEW).setDataAndType(
