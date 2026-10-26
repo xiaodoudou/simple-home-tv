@@ -65,6 +65,9 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private SurfaceHolder holder;
     private boolean active = true;
     private int retries;
+    private String source;              // what is playing, to carry on from the same point on another surface
+    private boolean sourceLocal;
+    private int resumeAt;
 
     public AerialBackground(Context c) {
         super(c);
@@ -105,13 +108,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
         holder = h;
         leavingPlane = false;
         if (mp != null && !softMode) {
-            try {
-                mp.setDisplay(h);
-                soft.setAlpha(0f);
-                return;
-            } catch (Exception e) {
-                release();
-            }
+            moveTo();
+            return;
         }
         if (mp == null) playNext();
     }
@@ -149,16 +147,31 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     }
 
     private void toSoft() {
-        if (mp != null) {
-            try {
-                mp.setSurface(softSurface);
-            } catch (Exception e) {
-                release();
-            }
-        }
         leavingPlane = true;
-        video.setVisibility(GONE);      // frees the plane; the player is kept
-        if (mp == null) playNext();
+        video.setVisibility(GONE);      // frees the plane
+        if (mp != null) moveTo();
+        else playNext();
+    }
+
+    /**
+     * Restarts the current clip, from where it was, on the surface for the current mode. Handing a running player
+     * a new surface leaves this TV's decoder stalled on a black frame.
+     */
+    private void moveTo() {
+        int at = 0;
+        try {
+            at = mp.getCurrentPosition();
+        } catch (Exception ignored) {
+        }
+        String src = source;
+        boolean local = sourceLocal;
+        release();
+        if (src == null) {
+            playNext();
+            return;
+        }
+        resumeAt = at;
+        play(src, local);
     }
 
     /** Off leaves only the gradient. */
@@ -205,6 +218,8 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
     private void play(String source, boolean local) {
         if (softMode ? softSurface == null : holder == null) return;
         release();
+        this.source = source;
+        sourceLocal = local;
         if (playing != null && playing != this) playing.release();
         playing = this;
         try {
@@ -215,11 +230,14 @@ public class AerialBackground extends FrameLayout implements SurfaceHolder.Callb
             mp.setDataSource(source);
             mp.setOnPreparedListener(p -> {
                 retries = 0;
+                if (resumeAt > 0) p.seekTo(resumeAt);
+                resumeAt = 0;
                 p.start();
             });
             mp.setOnInfoListener((p, what, extra) -> {
                 if (what == MediaPlayer.MEDIA_INFO_VIDEO_RENDERING_START) {
                     cover.animate().alpha(0f).setDuration(900).start();
+                    if (!softMode) soft.setAlpha(0f);
                 }
                 return false;
             });
