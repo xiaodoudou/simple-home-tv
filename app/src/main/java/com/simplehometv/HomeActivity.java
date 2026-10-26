@@ -76,7 +76,8 @@ public class HomeActivity extends Activity {
     private TextView clock, date;
     private ImageView gear;
     private LinearLayout hero;
-    private TextView heroEyebrow, heroTitle, heroSub;
+    private ImageView heroIcon;
+    private TextView heroTitle, heroSub;
     private HorizontalScrollView contentScroll, dockScroll;
     private LinearLayout contentRow, dockBox;
     private FrameLayout previewFrame;
@@ -334,15 +335,14 @@ public class HomeActivity extends Activity {
         hero = new LinearLayout(this);
         hero.setOrientation(LinearLayout.VERTICAL);
         hero.setAlpha(0f);
-        heroEyebrow = Ui.text(this, Ui.semibold(), 13, 0xB3F5F5F7);
-        heroEyebrow.setLetterSpacing(0.16f);
+        heroIcon = new ImageView(this);
         heroTitle = Ui.text(this, Ui.semibold(), 30, Ui.TEXT);
         heroTitle.setSingleLine(true);
         heroTitle.setEllipsize(TextUtils.TruncateAt.END);
         heroTitle.setShadowLayer(px(12), 0, px(1), 0x66000000);
         heroSub = Ui.text(this, Ui.regular(), 15, 0xCCF5F5F7);
         heroSub.setSingleLine(true);
-        hero.addView(heroEyebrow);
+        hero.addView(heroIcon, new LinearLayout.LayoutParams(px(26), px(26)));
         LinearLayout.LayoutParams htl = new LinearLayout.LayoutParams(px(screenWdp * 6 / 10), -2);
         htl.topMargin = px(8);
         hero.addView(heroTitle, htl);
@@ -599,7 +599,7 @@ public class HomeActivity extends Activity {
             contentScroll.setTranslationY(px(16));
             contentScroll.animate().alpha(1f).translationY(0).setDuration(320).setInterpolator(Ui.EASE).start();
         }
-        heroEyebrow.setText(t.label.toUpperCase(Locale.getDefault()));
+        heroIcon.setImageDrawable(appIcon(t.pkg));
         showHeroFor(zone == Zone.CONTENT ? contentFocus : 0);
         hero.animate().alpha(1f).setDuration(260).start();
     }
@@ -1406,7 +1406,7 @@ public class HomeActivity extends Activity {
                     int brand = brandColor(t.pkg);
                     card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
                             new int[]{blend(brand, 0xFF2A2E36, 0.85f), 0xFF1C1F25}));
-                    glyphAndLabel(card, appIcon(t.pkg), false, t.label, hDp);
+                    glyphAndLabel(card, appIcon(t.pkg), false, null, hDp);
                 }
                 break;
             }
@@ -1425,19 +1425,28 @@ public class HomeActivity extends Activity {
             case GET_APPS:
                 card.setBackground(Ui.rounded(0xFF1A1D23, px(Ui.RADIUS)));
                 card.setForeground(Ui.stroke(0x33FFFFFF, px(1), px(Ui.RADIUS)));
-                glyphAndLabel(card, getDrawable(R.drawable.ic_get), true, t.label, hDp);
+                glyphAndLabel(card, getDrawable(R.drawable.ic_get), true, null, hDp);
                 break;
             default:
                 card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{0xFF3A3F4B, 0xFF262A33}));
-                glyphAndLabel(card, getDrawable(R.drawable.ic_apps), true, t.label, hDp);
+                glyphAndLabel(card, getDrawable(R.drawable.ic_apps), true, null, hDp);
         }
         if (card.getForeground() == null) card.setForeground(Ui.stroke(0x14FFFFFF, px(1), px(Ui.RADIUS)));
         outer.addView(card, full());
         return outer;
     }
 
+    /** A centred glyph, with a label under it only when {@code label} is set (inputs, which share one glyph). */
     private void glyphAndLabel(FrameLayout card, Drawable glyph, boolean tint, String label, int hDp) {
         boolean small = hDp < 64;
+        if (label == null) {
+            ImageView g = new ImageView(this);
+            g.setImageDrawable(glyph);
+            if (tint) g.setColorFilter(0xFFE8EAED);
+            int size = Math.round(hDp * (tint ? 0.4f : 0.6f));
+            card.addView(g, new FrameLayout.LayoutParams(px(size), px(size), Gravity.CENTER));
+            return;
+        }
         LinearLayout col = new LinearLayout(this);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setGravity(Gravity.CENTER);
