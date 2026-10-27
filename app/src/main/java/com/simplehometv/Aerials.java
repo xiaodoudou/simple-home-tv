@@ -24,11 +24,11 @@ final class Aerials {
 
     /** A first-run selection: varied, and on the small side so the first download is quick. */
     static final Set<String> DEFAULT = new HashSet<>(Arrays.asList(
-            "009BA758-7060-4479-8EE8-FB9B40C8FB97",   // Korea and Japan Night
+            "AFA22C08-A486-4CE8-9A13-E355B6C38559",   // Liwa 1
             "3D729CFC-9000-48D3-A052-C5BD5B7A6842",   // Hawaii 1
-            "4AD99907-9E76-408D-A7FC-8429FF014201",   // San Francisco 1
-            "B1B5DDC5-73C8-4920-8133-BACCE38A08DE",   // New York Night
-            "03EC0F5E-CCA8-4E0A-9FEC-5BD1CE151182",   // Antarctica
+            "E99FA658-A59A-4A2D-9F3B-58E7BDC71A9A",   // Hong Kong 1
+            "44166C39-8566-4ECA-BD16-43159429B52F",   // New York 1
+            "F604AF56-EA77-4960-AEF7-82533CC1A8B3",   // London 1
             "B8F204CE-6024-49AB-85F9-7CA2F6DCD226")); // Greenland 1
 
     private static List<Clip> all;
@@ -65,6 +65,8 @@ final class Aerials {
     static List<Clip> chosen(Context c, Set<String> ids) {
         List<Clip> out = new ArrayList<>();
         for (Clip clip : all(c)) if (ids.contains(clip.id)) out.add(clip);
+        // A selection made only of clips since dropped from the list (space, underwater) falls back to the default.
+        if (out.isEmpty() && !ids.isEmpty()) for (Clip clip : all(c)) if (DEFAULT.contains(clip.id)) out.add(clip);
         return out;
     }
 
