@@ -168,7 +168,7 @@ public class AerialBackground extends FrameLayout {
 
     /** Resume after {@link #stop()} if the surface is still around. */
     public void resume() {
-        if (surface != null && mp == null && !paused && !held) playNext();
+        if (surface != null && mp == null && playing != this && !paused && !held) playNext();
     }
 
     // ---- stepping aside for an input's live picture ----
@@ -522,6 +522,14 @@ public class AerialBackground extends FrameLayout {
         sourceLocal = local;
         if (playing != null && playing != this) playing.release();
         playing = this;
+        int gen = playGen;
+        // The surface and the decoder stay taken until the releases queued above have run.
+        releaser.execute(() -> main.post(() -> {
+            if (gen == playGen && playing == this && surface != null) open(source, local);
+        }));
+    }
+
+    private void open(String source, boolean local) {
         try {
             mp = new MediaPlayer();
             if (video instanceof SurfaceView) mp.setDisplay(((SurfaceView) video).getHolder());
@@ -660,6 +668,7 @@ public class AerialBackground extends FrameLayout {
     }
 
     private void release() {
+        playGen++;
         if (playing == this) playing = null;
         loading(false);
         if (mp != null) {
@@ -674,6 +683,7 @@ public class AerialBackground extends FrameLayout {
     }
 
     private static final ExecutorService releaser = Executors.newSingleThreadExecutor();
+    private int playGen;
 
     private java.util.function.Consumer<Boolean> onLoading;
     private boolean isLoading;
