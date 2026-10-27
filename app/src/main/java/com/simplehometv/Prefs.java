@@ -66,6 +66,14 @@ final class Prefs {
     boolean screensaverClock() { return p.getBoolean("ss_clock", true); }
     void setScreensaverClock(boolean on) { p.edit().putBoolean("ss_clock", on).apply(); }
 
+    /** Minutes of screensaver before it dims, 0 for never. */
+    int screensaverDim() { return p.getInt("ss_dim", 60); }
+    void setScreensaverDim(int minutes) { p.edit().putInt("ss_dim", minutes).apply(); }
+
+    /** How dark the dimmed screensaver gets, in percent. */
+    int screensaverDimLevel() { return p.getInt("ss_dim_level", 95); }
+    void setScreensaverDimLevel(int percent) { p.edit().putInt("ss_dim_level", percent).apply(); }
+
     /** The content sources ({@link Content.Source#key}) hidden from an app's spotlight. */
     Set<String> hiddenSources(String pkg) {
         return set("hide:" + pkg);
