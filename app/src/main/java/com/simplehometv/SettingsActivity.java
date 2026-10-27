@@ -325,6 +325,14 @@ public class SettingsActivity extends Activity {
                 ours ? "On" : "Off", () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
         rows.add(new Row("Clock", "Time and date in the corner", onOff(prefs.screensaverClock()),
                 () -> prefs.setScreensaverClock(!prefs.screensaverClock())));
+        int dim = prefs.screensaverDim();
+        rows.add(new Row("Dim after", "Darkens the screensaver until the TV wakes", dim == 0 ? "Never" : dim < 60 ? dim + " min" : dim / 60 + " h",
+                () -> prefs.setScreensaverDim(nextDim(dim))));
+        if (dim > 0) {
+            int level = prefs.screensaverDimLevel();
+            rows.add(new Row("Dim level", "How dark it gets", level + "%",
+                    () -> prefs.setScreensaverDimLevel(nextStep(level, 60, 75, 85, 95))));
+        }
         rows.add(new Row("Start now", null, null, () -> startSafe(new Intent(Intent.ACTION_MAIN)
                 .setClassName("com.android.systemui", "com.android.systemui.Somnambulator")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
@@ -548,6 +556,15 @@ public class SettingsActivity extends Activity {
 
     private static String onOff(boolean on) {
         return on ? "On" : "Off";
+    }
+
+    private static int nextDim(int minutes) {
+        return nextStep(minutes, 0, 30, 60, 120, 240);
+    }
+
+    private static int nextStep(int current, int... steps) {
+        for (int i = 0; i < steps.length; i++) if (steps[i] == current) return steps[(i + 1) % steps.length];
+        return steps[0];
     }
 
     private static long dirSize(File dir) {

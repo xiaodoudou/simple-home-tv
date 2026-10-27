@@ -20,8 +20,13 @@ public class Screensaver extends DreamService {
     private final Handler main = new Handler(Looper.getMainLooper());
     private AerialBackground aerial;
     private TextView clock, date;
+    private View dimmer;
 
     private final Runnable tick = this::updateClock;
+    private final Runnable dim = () -> {
+        setScreenBright(false);
+        dimmer.animate().alpha(new Prefs(this).screensaverDimLevel() / 100f).setDuration(5000).start();
+    };
 
     @Override public void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -56,12 +61,20 @@ public class Screensaver extends DreamService {
         root.addView(corner, cl);
         corner.setVisibility(prefs.screensaverClock() ? View.VISIBLE : View.GONE);
 
+        dimmer = new View(this);
+        dimmer.setBackgroundColor(0xFF000000);
+        dimmer.setAlpha(0f);
+        root.addView(dimmer, new FrameLayout.LayoutParams(-1, -1));
+
         setContentView(root);
         updateClock();
+        int dimAfter = prefs.screensaverDim();
+        if (dimAfter > 0) main.postDelayed(dim, dimAfter * 60_000L);
     }
 
     @Override public void onDetachedFromWindow() {
         main.removeCallbacks(tick);
+        main.removeCallbacks(dim);
         if (aerial != null) aerial.stop();
         super.onDetachedFromWindow();
     }
