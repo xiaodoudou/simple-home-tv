@@ -6,12 +6,14 @@ import android.content.pm.ApplicationInfo;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.LayerDrawable;
 import android.media.tv.TvContract;
 import android.media.tv.TvView;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
@@ -1857,7 +1859,11 @@ public class HomeActivity extends Activity {
         switch (t.kind) {
             case APP: {
                 Drawable banner = appBanner(t.pkg);
-                if (banner != null) {
+                Drawable icon = banner == null ? appIcon(t.pkg) : null;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && (banner instanceof AdaptiveIconDrawable
+                        || icon instanceof AdaptiveIconDrawable && flat(((AdaptiveIconDrawable) icon).getBackground()))) {
+                    adaptiveArt(card, (AdaptiveIconDrawable) fresh(banner != null ? banner : icon), banner != null, t.pkg, hDp);
+                } else if (banner != null) {
                     card.setBackground(Ui.rounded(Ui.CARD, px(Ui.RADIUS)));
                     ImageView img = new ImageView(this);
                     img.setScaleType(ImageView.ScaleType.CENTER_CROP);
@@ -1890,6 +1896,70 @@ public class HomeActivity extends Activity {
         if (card.getForeground() == null) card.setForeground(Ui.stroke(0x14FFFFFF, px(1), px(Ui.RADIUS)));
         outer.addView(card, full());
         return outer;
+    }
+
+    /**
+     * Adaptive art is a square with a bleed meant to sit under a launcher's mask. Drawn as a plain banner it is
+     * cropped (F-Droid's banner), and as a glyph it floats small in the card (Brave): lay out its two layers
+     * instead, the background filling the card and the foreground over it, across the card for a banner. An icon
+     * only gets this when its background is one colour (see {@link #flat}); its foreground keeps some margin.
+     */
+    @android.annotation.TargetApi(Build.VERSION_CODES.O)
+    private void adaptiveArt(FrameLayout card, AdaptiveIconDrawable art, boolean isBanner, String pkg, int hDp) {
+        Drawable back = art.getBackground(), front = art.getForeground();
+        if (back != null) {
+            ImageView bg = new ImageView(this);
+            bg.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            bg.setImageDrawable(back);
+            card.addView(bg, full());
+        } else {
+            int brand = brandColor(pkg);
+            card.setBackground(new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{blend(brand, 0xFF2A2E36, 0.85f), 0xFF1C1F25}));
+        }
+        if (front == null) return;
+        ImageView fg = new ImageView(this);
+        fg.setImageDrawable(front);
+        if (isBanner) {
+            fg.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            card.addView(fg, full());
+        } else {
+            fg.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            int size = Math.round(hDp * 0.85f);
+            card.addView(fg, new FrameLayout.LayoutParams(px(size), px(size), Gravity.CENTER));
+        }
+    }
+
+    /**
+     * Whether an icon's background layer is a single colour. Stretched across a card, a patterned one (Chrome's
+     * wheel) turns into a close-up of itself, so those icons stay glyphs.
+     */
+    private static boolean flat(Drawable back) {
+        if (back == null) return false;
+        try {
+            Bitmap bmp = Bitmap.createBitmap(9, 9, Bitmap.Config.ARGB_8888);
+            Drawable copy = back.getConstantState() != null ? back.getConstantState().newDrawable().mutate() : back;
+            copy.setBounds(0, 0, 9, 9);
+            copy.draw(new Canvas(bmp));
+            int first = bmp.getPixel(4, 4);
+            boolean same = true;
+            for (int y = 0; y < 9 && same; y++) for (int x = 0; x < 9 && same; x++) {
+                int c = bmp.getPixel(x, y);
+                same = Color.alpha(c) > 250 && Math.abs(Color.red(c) - Color.red(first)) < 14
+                        && Math.abs(Color.green(c) - Color.green(first)) < 14
+                        && Math.abs(Color.blue(c) - Color.blue(first)) < 14;
+            }
+            bmp.recycle();
+            return same;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** A copy of {@code d} that no other view draws, so its bounds stay its own. */
+    private Drawable fresh(Drawable d) {
+        Drawable.ConstantState s = d.getConstantState();
+        return s != null ? s.newDrawable(getResources()).mutate() : d;
     }
 
     /** A centred glyph, with a label under it only when {@code label} is set (inputs, which share one glyph). */
