@@ -47,6 +47,7 @@ com.xiaomi.mitv.aod.screensaver
 com.xiaomi.mitv.hyper.screensaver
 
 [voice]
-# The XiaoAI assistant and its wake word.
+# The XiaoAI assistant and its wake word. The wake-word listener keeps about two-thirds of a core busy all the time
+# (seen on a MiTV-MFTR0); without it the remote's voice button does nothing.
 com.xiaomi.voicecontrol
 com.xiaomi.wakeupservice
