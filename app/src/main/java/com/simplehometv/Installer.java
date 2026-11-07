@@ -37,6 +37,7 @@ final class Installer {
     private static final String TAG = "Installer";
     private static final ExecutorService io = Executors.newSingleThreadExecutor();
     private static final Handler main = new Handler(Looper.getMainLooper());
+    static final String ALLOW = "Allow installing apps, then try again";
     private static final Map<String, String> state = new HashMap<>();   // package -> what is happening, for Settings
     private static Runnable onChange;
 
@@ -54,9 +55,11 @@ final class Installer {
 
     static void install(Context c, String pkg, String source) {
         Context app = c.getApplicationContext();
-        if (state(pkg) != null && !state(pkg).startsWith("Failed")) return;
+        String now = state(pkg);
+        // Busy is only looking or downloading: a failure, or the permission asked for and maybe granted since, retries.
+        if (now != null && !now.startsWith("Failed") && !now.equals(ALLOW)) return;
         if (Build.VERSION.SDK_INT >= 26 && !app.getPackageManager().canRequestPackageInstalls()) {
-            set(pkg, "Allow installing apps, then try again");
+            set(pkg, ALLOW);
             try {
                 c.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                         Uri.parse("package:" + app.getPackageName())).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
