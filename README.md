@@ -71,7 +71,7 @@ script again, with the same key so you stay signed in.
 
 ### Getting apps
 
-No store on the TV yet? Settings > Apps can install Aurora, APKUpdater, SmartTube and Moonlight for you. It downloads
+No store on the TV yet? Settings > Apps can install Aurora, F-Droid, APKUpdater, SmartTube and Moonlight for you. It downloads
 them from F-Droid or from the project's latest GitHub release, in the build for the TV's processor. The first time,
 Android asks you to let Simple Home install apps, then it asks you to confirm each one.
 

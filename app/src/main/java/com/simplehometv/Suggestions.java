@@ -70,6 +70,7 @@ final class Suggestions {
             out.add(new App("com.amazon.amazonvideo.livingroom", "Prime Video", "Official app", null));
         } else {
             out.add(new App(AURORA, "Aurora Store", "Opens an app's Google Play page from Get, no Google services", "fdroid:com.aurora.store"));
+            out.add(new App("org.fdroid.fdroid", "F-Droid", "Free and open-source apps, no Google account", "fdroid:org.fdroid.fdroid"));
             out.add(new App(APKUPDATER, "APKUpdater", "Keeps apps updated, with a TV layout", "github:rumboalla/apkupdater"));
             out.add(new App("org.smarttube.stable", "SmartTube", "YouTube without ads, no Google services needed", "github:yuliskov/SmartTube"));
         }
