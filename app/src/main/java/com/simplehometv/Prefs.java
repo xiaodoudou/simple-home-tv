@@ -31,6 +31,26 @@ final class Prefs {
     int dockRows() { return p.getInt("dock_rows", DockLayout.AUTO); }
     void setDockRows(int rows) { p.edit().putInt("dock_rows", rows).apply(); }
 
+    /** The dock in the middle of the screen, its app content under it, instead of along the bottom. */
+    boolean dockCentred() { return p.getBoolean("dock_centred", false); }
+    void setDockCentred(boolean on) { p.edit().putBoolean("dock_centred", on).apply(); }
+
+    /** Off: the dock has no All apps tile and the settings button opens a menu with both. */
+    boolean allAppsTile() { return p.getBoolean("all_apps_tile", true); }
+    void setAllAppsTile(boolean on) { p.edit().putBoolean("all_apps_tile", on).apply(); }
+
+    static final String[] BACKGROUND_NAMES = {"Black", "Graphite", "Midnight", "Forest", "Plum", "Wine", "Sand"};
+    static final int[] BACKGROUND_COLOURS = {
+            0xFF05070B, 0xFF24272E, 0xFF0F1B30, 0xFF10291F, 0xFF2A1733, 0xFF3A121A, 0xFF4A3F30};
+
+    /** Index into {@link #BACKGROUND_COLOURS}, the colour behind the home when the aerial is off. */
+    int background() {
+        int i = p.getInt("background", 0);
+        return i >= 0 && i < BACKGROUND_COLOURS.length ? i : 0;
+    }
+
+    void setBackground(int i) { p.edit().putInt("background", i).apply(); }
+
     boolean aerial() { return p.getBoolean("aerial", true); }
     void setAerial(boolean on) { p.edit().putBoolean("aerial", on).apply(); }
 

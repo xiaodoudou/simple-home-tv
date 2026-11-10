@@ -120,6 +120,7 @@ public class HomeActivity extends Activity {
     private final OkKey okKey = new OkKey();
     private long menuOpenedAt;
     private Mode menuReturn = Mode.HOME;
+    private boolean gearMenu;
     private final List<MenuItem> menuItems = new ArrayList<>();
     private final List<View> menuViews = new ArrayList<>();
     private int menuFocus;
@@ -227,7 +228,15 @@ public class HomeActivity extends Activity {
         if (onGear) focusGear();
         updateClock();
         aerial.setActive(prefs.aerial());
+        applyBackground();
         aerial.resume();
+    }
+
+    private void applyBackground() {
+        boolean on = prefs.aerial();
+        root.setBackgroundColor(on ? 0xFF05070B : Prefs.BACKGROUND_COLOURS[prefs.background()]);
+        aerial.setVisibility(on ? View.VISIBLE : View.GONE);
+        scrim.setVisibility(on ? View.VISIBLE : View.GONE);
     }
 
     /** Back from the screensaver, which took over the video player. */
@@ -501,8 +510,16 @@ public class HomeActivity extends Activity {
         dockViews.clear();
         dockTiles.clear();
         dockTiles.addAll(pinnedTiles());
-        dockTiles.add(Tile.allApps());
+        if (prefs.allAppsTile() || dockTiles.isEmpty()) dockTiles.add(Tile.allApps());
         layout = DockLayout.compute(dockTiles.size(), availW, prefs.dockRows());
+        boolean centred = prefs.dockCentred();
+        FrameLayout.LayoutParams dsl = (FrameLayout.LayoutParams) dockScroll.getLayoutParams();
+        dsl.width = centred ? -2 : -1;
+        dsl.gravity = centred ? Gravity.CENTER : Gravity.BOTTOM;
+        dsl.bottomMargin = centred ? 0 : px(BOTTOM - RING - VPAD);
+        dockScroll.setLayoutParams(dsl);
+        dockBox.setGravity(centred ? Gravity.CENTER_HORIZONTAL : Gravity.START);
+        hero.setVisibility(centred ? View.GONE : View.VISIBLE);
         LinearLayout row = null;
         for (int i = 0; i < dockTiles.size(); i++) {
             if (i % layout.cols == 0) {
@@ -533,7 +550,16 @@ public class HomeActivity extends Activity {
     private void placeAboveDock() {
         int dockTop = BOTTOM + dockHeight();
         FrameLayout.LayoutParams cl = (FrameLayout.LayoutParams) contentScroll.getLayoutParams();
-        cl.bottomMargin = px(dockTop + 24 - RING - VPAD);
+        if (prefs.dockCentred()) {
+            // No room above a centred dock under the clock: the content goes below it.
+            cl.gravity = Gravity.TOP;
+            cl.bottomMargin = 0;
+            cl.topMargin = px((screenHdp + dockHeight()) / 2 + 24 - RING - VPAD);
+        } else {
+            cl.gravity = Gravity.BOTTOM;
+            cl.topMargin = 0;
+            cl.bottomMargin = px(dockTop + 24 - RING - VPAD);
+        }
         contentScroll.setLayoutParams(cl);
         FrameLayout.LayoutParams hl = (FrameLayout.LayoutParams) hero.getLayoutParams();
         hl.bottomMargin = px(dockTop + contentH + 66);
@@ -611,7 +637,7 @@ public class HomeActivity extends Activity {
         } else {
             spotFor = null;
             fadeOutSpot();
-            if (t.kind == Tile.Kind.INPUT && prefs.preview() && !prefs.previewOff(t.inputId)) {
+            if (t.kind == Tile.Kind.INPUT && previews() && !prefs.previewOff(t.inputId)) {
                 // Only when focus rests on the tile: passing over it leaves the aerial alone.
                 pendingPreview = () -> startPreview(t);
                 main.postDelayed(pendingPreview, 700);
@@ -886,7 +912,7 @@ public class HomeActivity extends Activity {
     private static final long REVEAL_MS = 400, COVER_MS = 250, SETTLE_MS = 400;
 
     private boolean previewable(Tile t) {
-        if (t.kind != Tile.Kind.INPUT || !prefs.preview() || prefs.previewOff(t.inputId)) return false;
+        if (t.kind != Tile.Kind.INPUT || !previews() || prefs.previewOff(t.inputId)) return false;
         android.media.tv.TvInputManager tim = (android.media.tv.TvInputManager) getSystemService(TV_INPUT_SERVICE);
         return tim != null && Catalog.state(tim, t.inputId) == android.media.tv.TvInputManager.INPUT_STATE_CONNECTED;
     }
@@ -1092,6 +1118,11 @@ public class HomeActivity extends Activity {
         previewShade.setTranslationY(-lp.topMargin);
     }
 
+    /** A live preview needs the space above the dock, which a centred dock leaves too small. */
+    private boolean previews() {
+        return prefs.preview() && !prefs.dockCentred();
+    }
+
     // ---- all apps ----
 
     private void openDrawer() {
@@ -1142,14 +1173,15 @@ public class HomeActivity extends Activity {
 
     /** The first-row app nearest below dock tile {@code i}. */
     private int gridTileBelow(int i) {
-        float x = i % layout.cols * (layout.tileW + DockLayout.GAP) + layout.tileW / 2f - dockScroll.getScrollX() / dp;
+        float x = i % layout.cols * (layout.tileW + DockLayout.GAP) + layout.tileW / 2f
+                + (dockScroll.getLeft() - dockScroll.getScrollX()) / dp;
         return dockTiles.size() + Math.min(nearestCol(x, gridW, gridCols), gridTiles.size() - 1);
     }
 
     /** The tile in the bar's last row nearest above grid column {@code g}. */
     private int barTileAbove(int g) {
         int last = (dockTiles.size() - 1) / layout.cols * layout.cols;
-        float x = g * (gridW + DockLayout.GAP) + gridW / 2f + dockScroll.getScrollX() / dp;
+        float x = g * (gridW + DockLayout.GAP) + gridW / 2f + (dockScroll.getScrollX() - dockScroll.getLeft()) / dp;
         return last + nearestCol(x, layout.tileW, dockTiles.size() - last);
     }
 
@@ -1160,7 +1192,7 @@ public class HomeActivity extends Activity {
 
     /** How far the dock moves up to become the drawer's bar, in px (negative). */
     private float liftedDockY() {
-        int restingTop = screenHdp - BOTTOM - dockHeight();
+        int restingTop = prefs.dockCentred() ? (screenHdp - dockHeight()) / 2 : screenHdp - BOTTOM - dockHeight();
         int liftedTop = TOP + HEADER;
         return px(liftedTop - restingTop);
     }
@@ -1353,27 +1385,32 @@ public class HomeActivity extends Activity {
             }
             return;
         }
+        boolean below = prefs.dockCentred();     // the content row sits under the dock, not above it
         switch (zone) {
             case GEAR:
                 if (dy > 0) {
-                    if (!contentViews.isEmpty()) focusContent(contentFocus);
+                    if (!below && !contentViews.isEmpty()) focusContent(contentFocus);
                     else focusDock(dockFocus);
-                } else if (dx < 0 && !contentViews.isEmpty()) {
+                } else if (dx < 0 && !below && !contentViews.isEmpty()) {
                     focusContent(contentFocus);
                 }
                 break;
             case CONTENT:
                 if (dx != 0) focusContent(contentFocus + dx);
-                else if (dy < 0) focusGear();
-                else if (dy > 0) focusDock(dockFocus);
+                else if (dy < 0) {
+                    if (below) focusDock(dockFocus);
+                    else focusGear();
+                } else if (dy > 0 && !below) focusDock(dockFocus);
                 break;
             default:
                 int to = new GridNav(dockTiles.size(), layout.cols).move(dockFocus, dx, dy);
                 if (to == GridNav.OUT_TOP) {
-                    if (!contentViews.isEmpty()) focusContent(0);
+                    if (!below && !contentViews.isEmpty()) focusContent(0);
                     else focusGear();
                 } else if (to != dockFocus) {
                     focusDock(to);
+                } else if (dy > 0 && below && !contentViews.isEmpty()) {
+                    focusContent(0);
                 } else if (dy > 0 && !repeat) {
                     openDrawer(dockFocus);
                 }
@@ -1393,7 +1430,8 @@ public class HomeActivity extends Activity {
             return;
         }
         if (mode == Mode.HOME && zone == Zone.GEAR) {
-            startSafe(new Intent(this, SettingsActivity.class));
+            if (indexOf(dockTiles, Tile.allApps().id) >= 0) startSafe(new Intent(this, SettingsActivity.class));
+            else openGearMenu();
             return;
         }
         if (mode == Mode.HOME && zone == Zone.CONTENT) {
@@ -1524,7 +1562,22 @@ public class HomeActivity extends Activity {
         }
     }
 
+    /** The settings button's menu, when the dock has no All apps tile. */
+    private void openGearMenu() {
+        List<MenuItem> items = new ArrayList<>();
+        items.add(new MenuItem(getString(R.string.all_apps), null, false, false, this::openDrawer));
+        items.add(new MenuItem("Settings", null, false, false, () -> startSafe(new Intent(this, SettingsActivity.class))));
+        openMenu(getDrawable(R.drawable.ic_settings), true, "Menu", items);
+        gearMenu = true;
+    }
+
     private void openMenu(Tile t, List<MenuItem> items) {
+        boolean app = t.kind == Tile.Kind.APP;
+        openMenu(app ? appIcon(t.pkg) : getDrawable(R.drawable.ic_input), !app, t.label, items);
+    }
+
+    private void openMenu(Drawable d, boolean tint, String title, List<MenuItem> items) {
+        gearMenu = false;
         if (mode != Mode.MENU) menuReturn = mode;
         mode = Mode.MENU;
         main.removeCallbacks(holdTimer);
@@ -1537,12 +1590,11 @@ public class HomeActivity extends Activity {
         head.setGravity(Gravity.CENTER_VERTICAL);
         head.setPadding(px(12), px(10), px(12), px(14));
         ImageView icon = new ImageView(this);
-        Drawable d = t.kind == Tile.Kind.APP ? appIcon(t.pkg) : getDrawable(R.drawable.ic_input);
         icon.setImageDrawable(d);
-        if (t.kind != Tile.Kind.APP) icon.setColorFilter(Ui.TEXT);
+        if (tint) icon.setColorFilter(Ui.TEXT);
         head.addView(icon, new LinearLayout.LayoutParams(px(30), px(30)));
         TextView name = Ui.text(this, Ui.semibold(), 17, Ui.TEXT);
-        name.setText(t.label);
+        name.setText(title);
         name.setSingleLine(true);
         name.setEllipsize(TextUtils.TruncateAt.END);
         LinearLayout.LayoutParams nl = new LinearLayout.LayoutParams(0, -2, 1);
@@ -1611,7 +1663,10 @@ public class HomeActivity extends Activity {
         menuScrim.animate().alpha(0f).setDuration(160).withEndAction(() -> menuScrim.setVisibility(View.GONE)).start();
         menuBox.animate().alpha(0f).scaleX(0.96f).scaleY(0.96f).setDuration(140)
                 .withEndAction(() -> menuBox.setVisibility(View.GONE)).start();
-        if (mode == Mode.HOME && dockFocus < dockTiles.size()) {
+        if (gearMenu) {
+            gearMenu = false;
+            if (mode == Mode.HOME) focusGear();
+        } else if (mode == Mode.HOME && dockFocus < dockTiles.size()) {
             spots.remove(dockTiles.get(dockFocus).pkg);
             focusDock(dockFocus);
         }

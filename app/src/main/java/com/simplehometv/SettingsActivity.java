@@ -199,8 +199,14 @@ public class SettingsActivity extends Activity {
         String[] rowsNames = {"Automatic", "One row", "Two rows"};
         rows.add(new Row("Dock layout", "Automatic uses two rows when one would make tiles too small",
                 rowsNames[prefs.dockRows()], () -> prefs.setDockRows((prefs.dockRows() + 1) % 3)));
+        rows.add(new Row("Dock position", "Centre puts an app's content under the dock, without live input previews",
+                prefs.dockCentred() ? "Centre" : "Bottom", () -> prefs.setDockCentred(!prefs.dockCentred())));
+        rows.add(new Row("All apps tile", "Off: the settings button opens a menu with All apps",
+                onOff(prefs.allAppsTile()), () -> prefs.setAllAppsTile(!prefs.allAppsTile())));
         rows.add(new Row("Aerial video background", "Apple's aerial footage, downloaded once and kept on the device",
                 onOff(prefs.aerial()), () -> prefs.setAerial(!prefs.aerial())));
+        rows.add(new Row("Background colour", "Shown when the aerial is off", Prefs.BACKGROUND_NAMES[prefs.background()],
+                () -> prefs.setBackground((prefs.background() + 1) % Prefs.BACKGROUND_COLOURS.length)));
         int chosen = Aerials.chosen(this, prefs.aerialIds()).size();
         rows.add(new Row("Aerial videos", "Pick which ones play", chosen + " of " + Aerials.all(this).size(), () -> {
             clipPage = true;
