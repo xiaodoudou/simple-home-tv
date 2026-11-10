@@ -1,6 +1,8 @@
 package com.simplehometv;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -26,6 +28,15 @@ public class InstallerTest {
     @Test public void neverPicksARootBuild() {
         assertEquals(D + "app-nonRoot-release.apk", Installer.pick(Arrays.asList(D + "app-root-release.apk",
                 D + "app-nonRoot-release.apk"), new String[]{"arm64-v8a"}));
+    }
+
+    @Test public void comparesVersions() {
+        assertTrue(Installer.newer("0.4.10", "0.4.9"));
+        assertTrue(Installer.newer("0.5", "0.4.9"));
+        assertTrue(Installer.newer("1.0.0", "0.9.9-debug"));
+        assertFalse(Installer.newer("0.4.6", "0.4.6"));
+        assertFalse(Installer.newer("0.4.6", "0.4.7"));
+        assertFalse(Installer.newer("0.4.7-rc.1", "0.4.7"));
     }
 
     @Test public void singleApk() {

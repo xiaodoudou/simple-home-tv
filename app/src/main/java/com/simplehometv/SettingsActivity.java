@@ -352,6 +352,17 @@ public class SettingsActivity extends Activity {
         } catch (Exception ignored) {
         }
         rows.add(new Row("Simple Home", "A clean home screen for Android TV", version, null));
+        if (Installer.latest() == null && !Installer.checking() && !Installer.checkFailed()) Installer.checkUpdate();
+        String installing = Installer.state(getPackageName()), latest = Installer.latest();
+        boolean available = latest != null && Installer.newer(latest, version);
+        String value = installing != null ? (installing.startsWith("Allow") ? "Install" : installing)
+                : Installer.checking() ? "Checking"
+                : available ? "Install " + latest
+                : Installer.checkFailed() ? "Check again"
+                : "Up to date";
+        rows.add(new Row("Updates", installing != null && installing.startsWith("Allow") ? installing
+                : "New versions come from Simple Home's releases on GitHub", value,
+                available ? () -> Installer.install(this, getPackageName(), Installer.OWN_SOURCE) : Installer::checkUpdate));
         rows.add(new Row("Device", Build.MANUFACTURER + " " + Build.MODEL, "Android " + Build.VERSION.RELEASE, null));
         rows.add(new Row("Device info", null, null, () -> open(Settings.ACTION_DEVICE_INFO_SETTINGS, Settings.ACTION_SETTINGS)));
     }

@@ -53,6 +53,65 @@ final class Installer {
         onChange = r;
     }
 
+    // ---- updating Simple Home itself ----
+
+    static final String OWN_SOURCE = "github:xiaodoudou/simple-home-tv";
+    private static String latest;           // the newest release's version, null until checked
+    private static boolean checking, checkFailed;
+
+    static synchronized String latest() { return latest; }
+    static synchronized boolean checking() { return checking; }
+    static synchronized boolean checkFailed() { return checkFailed; }
+
+    /** Looks up Simple Home's newest release in the background; {@link #onChange} hears when it's known. */
+    static void checkUpdate() {
+        synchronized (Installer.class) {
+            if (checking) return;
+            checking = true;
+        }
+        main.post(Installer::changed);
+        io.execute(() -> {
+            String found = null;
+            try {
+                found = latestVersion(OWN_SOURCE.substring(7));
+            } catch (Exception e) {
+                Log.w(TAG, "update check: " + e);
+            }
+            synchronized (Installer.class) {
+                checking = false;
+                checkFailed = found == null;
+                if (found != null) latest = found;
+            }
+            main.post(Installer::changed);
+        });
+    }
+
+    static String latestVersion(String repo) throws Exception {
+        return redirect("https://github.com/" + repo + "/releases/latest").replaceFirst(".*/tag/v?", "");
+    }
+
+    /** Whether dotted version {@code a} is newer than {@code b}; anything after a "-" is ignored. */
+    static boolean newer(String a, String b) {
+        String[] x = a.split("-")[0].split("\\."), y = b.split("-")[0].split("\\.");
+        for (int i = 0; i < Math.max(x.length, y.length); i++) {
+            int p = i < x.length ? num(x[i]) : 0, q = i < y.length ? num(y[i]) : 0;
+            if (p != q) return p > q;
+        }
+        return false;
+    }
+
+    private static int num(String s) {
+        try {
+            return Integer.parseInt(s.trim());
+        } catch (NumberFormatException e) {
+            return 0;
+        }
+    }
+
+    private static void changed() {
+        if (onChange != null) onChange.run();
+    }
+
     static void install(Context c, String pkg, String source) {
         Context app = c.getApplicationContext();
         String now = state(pkg);
