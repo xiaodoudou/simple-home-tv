@@ -1,7 +1,7 @@
 ---
 title: Debloat your TV
 permalink: /debloat
-description: Which preinstalled apps to turn off on China-market Sony and Xiaomi TVs, with adb, and how to undo it.
+description: Which preinstalled apps to turn off on China-market Sony and Xiaomi TVs and the NVIDIA Shield, with adb, and how to undo it.
 ---
 
 # Debloat your TV
@@ -83,8 +83,10 @@ ADB debugging and allow installing unknown apps.
 
 **Don't touch PatchWall** (`com.mitv.tvhome`). This firmware only lets a system app be the home screen: with PatchWall
 off, Home goes to an empty fallback screen that keeps restarting. Simple Home gets around it with an accessibility
-service that brings Simple Home back whenever PatchWall comes up. It doesn't catch any keys, so holding volume still
-repeats. Turn it on from Simple Home's Settings > Home, or with adb, together with the two grants that keep it on:
+service. When PatchWall or the fallback screen comes up, or you press Home in another app, it brings Simple Home back;
+after a Home press that happens before PatchWall has drawn a frame. PatchWall updates itself, so the service looks
+again at which home the firmware uses whenever an app is installed, updated or turned off. It doesn't filter any
+keys, so holding volume still repeats. Turn it on from Simple Home's Settings > Home, or with adb, together with the two grants that keep it on:
 
 ```sh
 adb shell settings put secure enabled_accessibility_services com.simplehometv/.HomeButton
@@ -100,9 +102,36 @@ you leave an app with Back.
 
 Keep the settings (`com.xiaomi.mitv.settings`, `com.xiaomi.tvqs`), the inputs player (`com.xiaomi.mitv.tvplayer`),
 anything starting with `mitv.service` or `com.mediatek`, the Sogou keyboard, the system updater
-(`com.xiaomi.mitv.upgrade`) and the Xiaomi account. Casting (`com.xiaomi.miplay`, `com.xiaomi.mitv.smartshare`) and the
+(`com.xiaomi.mitv.upgrade`, unless you [stop updates](#stopping-firmware-updates)) and the Xiaomi account. Casting (`com.xiaomi.miplay`, `com.xiaomi.mitv.smartshare`) and the
 USB media player (`com.xiaomi.mitv.mediaexplorer`) are worth keeping too.
 
 ## NVIDIA Shield
 
-Coming soon.
+Tried on a SHIELD Android TV (darcy, Shield Experience on Android 11).
+List: [shield.txt](https://github.com/xiaodoudou/simple-home-tv/blob/main/scripts/debloat/shield.txt).
+
+- `google-home`: the Google TV home and its recommendation feed. Run it only once Simple Home is the home screen,
+  since the Shield picks Google's home over any other while it is on.
+- `preinstalls`: Prime Video, Google TV (films), Play Games and YouTube Music.
+- `nvidia-extras`: NVIDIA Games, game broadcasting, feedback, usage stats, diagnostics, the developer widget, the
+  input viewer, the beta program and the factory tools.
+- `google-extras`: Google feedback, the photo viewer, printing and the basic screensaver.
+- `voice`: Google Assistant and its wake word. Skip it if you talk to the remote: without it the microphone button
+  does nothing.
+
+Keep the updater (`com.nvidia.ota`, unless you [stop updates](#stopping-firmware-updates)), Play services, Cast (`com.google.android.apps.mediashell`), the TV provider
+(`com.android.providers.tv`, which fills the Continue watching rows), `com.nvidia.irtuner` (the remote's TV volume and
+power), `com.nvidia.shieldtech.hooks` and `com.nvidia.shield.appselector` (the remote's buttons), and the pairing and
+Bluetooth apps.
+
+## Stopping firmware updates
+
+An update can turn disabled apps back on, bring the stock home back or move things the lists rely on. To keep a TV
+the way it is, turn its updater off. You stop getting security fixes too, so decide which matters more to you.
+
+- Sony: `com.sony.dtv.systemupdate` and `com.sony.dtv.update`
+- Xiaomi: `com.xiaomi.mitv.upgrade`
+- Shield: `com.nvidia.ota`
+
+It's the same command the lists use, `adb shell pm disable-user --user 0 <package>`, and
+`adb shell pm enable <package>` turns updates back on.

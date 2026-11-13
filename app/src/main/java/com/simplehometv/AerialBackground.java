@@ -47,7 +47,10 @@ public class AerialBackground extends FrameLayout {
     private static final int MIN_CLIP = 1 << 20;         // anything smaller is an error page, not a video
 
     // Shared: the home and the screensaver use the same cache, and TVs have few video decoders.
-    private static final ExecutorService io = Executors.newSingleThreadExecutor();
+    private static final ExecutorService io = Executors.newSingleThreadExecutor(r -> new Thread(() -> {
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+        r.run();
+    }, "aerial-io"));
     private static boolean downloading;
     private static AerialBackground playing;
     private static String lastId;                       // so the order carries on between home and screensaver

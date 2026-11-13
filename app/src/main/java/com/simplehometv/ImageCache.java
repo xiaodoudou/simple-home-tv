@@ -18,7 +18,7 @@ import java.security.MessageDigest;
 /** Downloads and disk-caches artwork (http(s) or content://) and decodes it near a target width. Call off the UI thread. */
 final class ImageCache {
 
-    private static final LruCache<String, Bitmap> MEM = new LruCache<String, Bitmap>(48 * 1024 * 1024) {
+    private static final LruCache<String, Bitmap> MEM = new LruCache<String, Bitmap>(32 * 1024 * 1024) {
         @Override protected int sizeOf(String k, Bitmap b) {
             return b.getByteCount();
         }
@@ -43,8 +43,15 @@ final class ImageCache {
             BitmapFactory.decodeFile(f.getPath(), o);
             int sample = 1;
             while (o.outWidth / (sample * 2) >= maxW) sample *= 2;
+            int sampled = o.outWidth / sample;
             o = new BitmapFactory.Options();
             o.inSampleSize = sample;
+            if (sampled > maxW) {
+                // Sampling only halves, which can leave twice the width needed: the decoder scales the rest.
+                o.inScaled = true;
+                o.inDensity = sampled;
+                o.inTargetDensity = maxW;
+            }
             Bitmap b = BitmapFactory.decodeFile(f.getPath(), o);
             if (b != null) MEM.put(key, b);
             return b;

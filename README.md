@@ -17,14 +17,15 @@ and how to keep Plex running.
 - **Home.** Pinned apps and HDMI inputs in a dock of one or two rows, icons only, over Apple's aerial videos (Full HD
   or 4K, and you pick which ones play). The clock and date sit in the corner, the gear opens Settings.
 - **What's on.** Focus an app and the row above shows what it publishes: Continue watching, channels. Plex fills it
-  nicely. Focus an HDMI input and you get its live picture in a box, with the aerial paused and blurred around it.
+  nicely. The row is read again whenever you come back to the app, so it shows what the app last published. Focus an HDMI input and you get its live picture in a box, with the aerial paused and blurred around it.
+  Hold OK on an input to rename it or turn its preview off; with the preview off the aerial keeps playing.
 - **All apps.** Press Down from the dock. Everything that isn't pinned, in an order you can change. Hold OK on a tile
   to add it to the home, move it, hide it or uninstall it. Hidden apps come back from Settings.
 - **Moving tiles.** Hold OK and pick Move: the tile follows left and right (and up and down on two rows) until you
   press OK.
 - **Screensaver.** Apple's aerial videos, with the time in a corner.
-- **Settings.** Network, display and sound, inputs, apps and app stores, the screensaver, and a shortcut to the
-  TV's own Android settings.
+- **Settings.** The home and its dock, inputs, apps and app stores, the aerial background, the screensaver, network,
+  display and sound, and a shortcut to the TV's own Android settings.
 
 | | |
 |---|---|
@@ -47,6 +48,10 @@ Some firmwares (Xiaomi's Chinese one) only let their own home be the home. There
 button" in the TV's Accessibility settings and the Home button opens Simple Home anyway. On Xiaomi also run the two
 grants on [Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat), or the firmware switches it off
 again at standby.
+
+On an NVIDIA Shield, Google's home wins over any other, so `set-home-activity` alone does nothing. Turn it off first,
+with the `google-home` group on [Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat) or with
+`adb shell pm disable-user --user 0 com.google.android.tvlauncher`, then run the `set-home-activity` line again.
 
 It needs Android TV 7 or later. The rows of what's on need Android 8, since that's when apps got a way to publish
 them.

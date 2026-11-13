@@ -1,0 +1,49 @@
+# NVIDIA Shield. Tried on a SHIELD Android TV (darcy, Shield Experience on Android 11).
+# Keep com.nvidia.ota (updates), com.google.android.gms and gsf (Play services), com.google.android.apps.mediashell
+# (Cast), com.android.providers.tv (the channels and Continue watching rows), com.nvidia.irtuner (the remote's TV
+# volume and power), com.nvidia.shieldtech.hooks and com.nvidia.shield.appselector (the remote's buttons),
+# com.nvidia.blakepairing and the Bluetooth apps (remote and controller pairing), and com.google.android.tv.remote.service
+# (the phone remote).
+
+[google-home]
+# The Google TV home and its recommendation feed. Only once Simple Home is the home screen.
+com.google.android.tvlauncher
+com.google.android.tvrecommendations
+
+[preinstalls]
+# Apps that came with the Shield: Prime Video, Google TV (films), Play Games, YouTube Music.
+com.amazon.amazonvideo.livingroom
+com.amazon.amazonvideo.livingroom.nvidia
+com.google.android.videos
+com.google.android.play.games
+com.google.android.youtube.tvmusic
+
+[nvidia-extras]
+# NVIDIA Games, game broadcasting, feedback, usage stats, diagnostics, the developer widget, the input viewer,
+# the beta program and the factory tools.
+com.nvidia.tegrazone3
+com.nvidia.nvgamecast
+com.nvidia.feedback
+com.nvidia.stats
+com.nvidia.diagtools
+com.nvidia.developerwidget
+com.nvidia.inputviewer
+com.nvidia.shield.beta
+com.nvidia.shieldbeta
+com.nvidia.factory
+com.nvidia.factorybundling
+com.nvidia.factorysyschecker
+
+[google-extras]
+# Google feedback, the photo viewer, printing and the basic screensaver.
+com.google.android.feedback
+com.android.gallery3d
+com.android.printspooler
+com.android.dreams.basic
+
+[voice]
+# Google Assistant and its wake word. Skip it if you talk to the remote.
+com.google.android.katniss
+com.android.hotwordenrollment.okgoogle
+com.android.hotwordenrollment.xgoogle
+com.nvidia.hotwordsetup

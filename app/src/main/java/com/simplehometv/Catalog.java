@@ -116,7 +116,8 @@ final class Catalog {
                 .setDataAndType(TvContract.buildChannelUriForPassthroughInput(tune.getId()), "vnd.android.cursor.item/channel")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         int state = state(tim, port.getId());
-        return Tile.input(port.getId(), tune.getId(), label, view, state != TvInputManager.INPUT_STATE_DISCONNECTED,
+        String named = new Prefs(c).inputName(port.getId());
+        return Tile.input(port.getId(), tune.getId(), named != null ? named : label, view, state != TvInputManager.INPUT_STATE_DISCONNECTED,
                 state == TvInputManager.INPUT_STATE_CONNECTED);
     }
 

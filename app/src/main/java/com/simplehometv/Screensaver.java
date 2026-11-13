@@ -27,6 +27,8 @@ public class Screensaver extends DreamService {
         setScreenBright(false);
         dimmer.animate().alpha(new Prefs(this).screensaverDimLevel() / 100f).setDuration(5000).start();
     };
+    // A dream that ends itself once the screen timeout has passed sends the TV to sleep; apps can't call sleep directly.
+    private final Runnable turnOff = this::finish;
 
     @Override public void onAttachedToWindow() {
         super.onAttachedToWindow();
@@ -70,11 +72,14 @@ public class Screensaver extends DreamService {
         updateClock();
         int dimAfter = prefs.screensaverDim();
         if (dimAfter > 0) main.postDelayed(dim, dimAfter * 60_000L);
+        int offAfter = prefs.screensaverOff();
+        if (offAfter > 0) main.postDelayed(turnOff, offAfter * 60_000L);
     }
 
     @Override public void onDetachedFromWindow() {
         main.removeCallbacks(tick);
         main.removeCallbacks(dim);
+        main.removeCallbacks(turnOff);
         if (aerial != null) aerial.stop();
         super.onDetachedFromWindow();
     }

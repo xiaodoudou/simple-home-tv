@@ -88,6 +88,8 @@ public class HomeActivity extends Activity {
     private TvView tvView;
     private ImageView previewCover;
     private FrameLayout previewMask;    // the box's filling: blurred frame plus shade, faded to show the input
+    private FrameLayout previewBackdrop;
+    private TextView noSignal;
     private View previewShade;   // the paused aerial's piece behind the box, fading out as the input appears
     private View drawerBg;
     private LinearLayout drawerHeader;
@@ -129,7 +131,11 @@ public class HomeActivity extends Activity {
     private final List<View> moveArrows = new ArrayList<>();
 
     private final Handler main = new Handler(Looper.getMainLooper());
-    private final ExecutorService io = Executors.newFixedThreadPool(3);
+    // Background priority: at normal priority, decoding art after a return made the in-window aerial drop frames.
+    private final ExecutorService io = Executors.newFixedThreadPool(3, r -> new Thread(() -> {
+        android.os.Process.setThreadPriority(android.os.Process.THREAD_PRIORITY_BACKGROUND);
+        r.run();
+    }, "home-io"));
     private final Map<String, Drawable> banners = new HashMap<>();
     private final Map<String, Drawable> icons = new HashMap<>();
     private final Map<String, Integer> brands = new HashMap<>();
@@ -234,7 +240,9 @@ public class HomeActivity extends Activity {
 
     private void applyBackground() {
         boolean on = prefs.aerial();
-        root.setBackgroundColor(on ? 0xFF05070B : Prefs.BACKGROUND_COLOURS[prefs.background()]);
+        // With the aerial on, its video or cover hides the root: painting it too costs a full-screen pass per frame.
+        if (on) root.setBackground(null);
+        else root.setBackgroundColor(Prefs.BACKGROUND_COLOURS[prefs.background()]);
         aerial.setVisibility(on ? View.VISIBLE : View.GONE);
         scrim.setVisibility(on ? View.VISIBLE : View.GONE);
     }
@@ -393,6 +401,15 @@ public class HomeActivity extends Activity {
         previewShade = new View(this);
         previewShade.setBackground(scrimDrawable());
         previewMask.addView(previewShade);
+        // Fades in once the box is open, so it shows while the input has no picture yet (or none at all).
+        previewBackdrop = new FrameLayout(this);
+        previewBackdrop.setBackgroundColor(0xE6000000);
+        previewBackdrop.setAlpha(0f);
+        noSignal = Ui.text(this, Ui.regular(), 16, 0x99F5F5F7);
+        noSignal.setText("No signal");
+        noSignal.setAlpha(0f);
+        previewBackdrop.addView(noSignal, new FrameLayout.LayoutParams(-2, -2, Gravity.CENTER));
+        previewMask.addView(previewBackdrop, new FrameLayout.LayoutParams(-1, -1));
         previewFrame.addView(previewMask, new FrameLayout.LayoutParams(-1, -1));
         root.addView(previewFrame, new FrameLayout.LayoutParams(px(480), px(270)));
 
@@ -484,6 +501,7 @@ public class HomeActivity extends Activity {
         root.addView(menuBox, new FrameLayout.LayoutParams(px(340), -2, Gravity.CENTER));
 
         setContentView(root);
+        getWindow().setBackgroundDrawable(null);    // the root covers it
     }
 
 
@@ -629,7 +647,8 @@ public class HomeActivity extends Activity {
             Spot cached = spots.get(t.pkg);
             if (cached != null) {
                 applySpot(t, cached);
-                if (SystemClock.uptimeMillis() - cached.at < 120_000) return;
+                // Apps can't be asked to republish (Plex has no receiver for it): re-reading is the freshest it gets.
+                if (SystemClock.uptimeMillis() - cached.at < 15_000) return;
             }
             final int token = ++spotToken;
             pendingSpot = () -> loadSpot(t, token);
@@ -909,7 +928,7 @@ public class HomeActivity extends Activity {
     private String warmFor;                 // input whose session is open
     private boolean warmVideo;              // ...and has a picture
     private int previewGen;                 // bumps on every enter/leave, so stale steps do nothing
-    private static final long REVEAL_MS = 400, COVER_MS = 250, SETTLE_MS = 400;
+    private static final long REVEAL_MS = 400, COVER_MS = 250, SETTLE_MS = 400, NO_SIGNAL_MS = 2500;
 
     private boolean previewable(Tile t) {
         if (t.kind != Tile.Kind.INPUT || !previews() || prefs.previewOff(t.inputId)) return false;
@@ -993,6 +1012,21 @@ public class HomeActivity extends Activity {
         }
         previewFrame.setVisibility(View.GONE);
         previewCover.setImageBitmap(null);
+        previewBackdrop.animate().cancel();
+        previewBackdrop.setAlpha(0f);
+        noSignal.setAlpha(0f);
+    }
+
+    /** Preview switched off for this input while the home is up: its session would otherwise run until leaving. */
+    private void endSession(String inputId) {
+        if (!inputId.equals(warmFor) || inputId.equals(previewFor) || tvView == null) return;
+        warmFor = null;
+        warmVideo = false;
+        aerial.setHeld(false);
+        try {
+            tvView.reset();
+        } catch (Exception ignored) {
+        }
     }
 
     private void lostInput() {
@@ -1002,6 +1036,7 @@ public class HomeActivity extends Activity {
         if (previewFor != null) {
             previewMask.animate().cancel();
             previewMask.animate().alpha(1f).setDuration(COVER_MS).start();
+            noSignal.animate().alpha(1f).setDuration(REVEAL_MS).start();
         }
     }
 
@@ -1023,6 +1058,7 @@ public class HomeActivity extends Activity {
             previewMask.setAlpha(1f);
             tvView.setLayoutParams(new FrameLayout.LayoutParams(-1, -1));
             previewFrame.setVisibility(View.VISIBLE);
+            showBoxBackdrop(gen);
             if (warm) {
                 aerial.hidePlane();
                 if (warmVideo) main.postDelayed(() -> reveal(gen), 80);
@@ -1036,6 +1072,23 @@ public class HomeActivity extends Activity {
         };
         if (warm) aerial.blurOver(open);
         else aerial.freeze(open);
+    }
+
+    private void showBoxBackdrop(int gen) {
+        previewBackdrop.animate().cancel();
+        noSignal.animate().cancel();
+        noSignal.setAlpha(0f);
+        previewBackdrop.animate().alpha(1f).setStartDelay(0).setDuration(REVEAL_MS).start();
+        main.postDelayed(() -> {
+            if (gen == previewGen && !warmVideo) noSignal.animate().alpha(1f).setDuration(REVEAL_MS).start();
+        }, NO_SIGNAL_MS);
+    }
+
+    private void hideBoxBackdrop() {
+        previewBackdrop.animate().cancel();
+        noSignal.animate().cancel();
+        previewBackdrop.animate().alpha(0f).setStartDelay(0).setDuration(COVER_MS).start();
+        noSignal.setAlpha(0f);
     }
 
     private void reveal(int gen) {
@@ -1053,6 +1106,7 @@ public class HomeActivity extends Activity {
         if (previewFor == null) return;
         int gen = ++previewGen;
         previewFor = null;
+        hideBoxBackdrop();
         if (!aerial.isFrozen()) return;
         Runnable back = () -> {
             if (gen != previewGen) return;
@@ -1504,10 +1558,15 @@ public class HomeActivity extends Activity {
             boolean off = prefs.previewOff(t.inputId);
             items.add(new MenuItem("Live preview", off ? "Off" : "On", false, true, () -> {
                 prefs.setPreviewOff(t.inputId, !off);
+                if (!off) {
+                    stopPreview();
+                    main.postDelayed(() -> endSession(t.inputId), COVER_MS);    // once the box has covered it
+                }
                 int keep = menuFocus;
                 openTileMenu(t);
                 focusMenu(keep);
             }));
+            items.add(new MenuItem("Rename", null, false, false, () -> renameInput(t)));
             if (pinned) items.add(toggle);
             else items.add(hide);
         }
@@ -1546,6 +1605,38 @@ public class HomeActivity extends Activity {
             }));
         }
         openMenu(t, items);
+    }
+
+    /** An empty name goes back to the one the TV reports. */
+    private void renameInput(Tile t) {
+        stopPreview();      // the input's picture can sit above every window, the dialog's included
+        android.widget.EditText field = new android.widget.EditText(this);
+        field.setSingleLine(true);
+        field.setText(prefs.inputName(t.inputId) != null ? t.label : "");
+        field.setHint(t.label);
+        field.setSelectAllOnFocus(true);
+        field.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_DONE);
+        android.app.AlertDialog d = new android.app.AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle("Rename " + t.label)
+                .setView(field)
+                .setPositiveButton("Save", (x, w) -> applyInputName(t, field.getText().toString()))
+                .setNeutralButton("Reset", (x, w) -> applyInputName(t, null))
+                .setNegativeButton("Cancel", null)
+                .create();
+        field.setOnEditorActionListener((v, action, ev) -> {
+            applyInputName(t, field.getText().toString());
+            d.dismiss();
+            return true;
+        });
+        d.show();
+    }
+
+    private void applyInputName(Tile t, String name) {
+        prefs.setInputName(t.inputId, name);
+        load();
+        renderDock();
+        if (mode == Mode.DRAWER || menuReturn == Mode.DRAWER) renderGrid();
+        if (mode == Mode.HOME) focusDock(Math.max(0, indexOf(dockTiles, t.id)));
     }
 
     private void afterPinChange(String id) {

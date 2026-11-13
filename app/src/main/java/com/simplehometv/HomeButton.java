@@ -20,7 +20,10 @@ import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 
 /**
  * For TVs whose firmware only lets a system app be the home (Xiaomi's China firmware): brings Simple Home back when
@@ -34,23 +37,43 @@ public class HomeButton extends AccessibilityService {
 
     private static final String TAG = "HomeButton";
     private static final long HOME_PAUSE_MS = 400;     // Home pauses the home 30-80 ms after the key (MiTV-MFTR0)
+    private static final long HOME_RETRY_MS = 300;
+
+    private final Handler main = new Handler(Looper.getMainLooper());
 
     private static HomeButton running;
     private static boolean homeInFront;
     private static long homeKeyAt = Long.MIN_VALUE / 2;
 
-    private String stockHome;
+    private boolean active;                 // the system's home is not Simple Home
+    private String stockHome;               // its package, unless it is only a fallback
+    private Set<String> otherHomes = Collections.emptySet();   // class names of every other HOME activity
 
     private final BroadcastReceiver homeKey = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
-            if (homeInFront && "homekey".equals(i.getStringExtra("reason"))) homeKeyAt = SystemClock.uptimeMillis();
+            if (!"homekey".equals(i.getStringExtra("reason"))) return;
+            if (homeInFront) {
+                homeKeyAt = SystemClock.uptimeMillis();
+            } else if (active) {
+                // A restarted PatchWall sends no window event, so Home from an app is answered here too. The stock
+                // home starts some 30 ms after the key: the second start puts Simple Home back if it lost that race.
+                main.post(HomeButton.this::openHome);
+                main.postDelayed(HomeButton.this::openHome, HOME_RETRY_MS);
+            }
+        }
+    };
+
+    // Read once, the stock home goes stale when PatchWall updates or is turned off and on: Home then stays on it.
+    private final BroadcastReceiver packages = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            refreshHomes();
         }
     };
 
     @android.annotation.SuppressLint("UnspecifiedRegisterReceiverFlag")    // the flags exist from Android 13 only
     @Override protected void onServiceConnected() {
         running = this;
-        stockHome = stockHome(this);
+        refreshHomes();
         new Prefs(this).setHomeButton(true);
         if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.R) {
             AccessibilityServiceInfo info = getServiceInfo();
@@ -60,9 +83,48 @@ public class HomeButton extends AccessibilityService {
         IntentFilter f = new IntentFilter(Intent.ACTION_CLOSE_SYSTEM_DIALOGS);
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(homeKey, f, Context.RECEIVER_NOT_EXPORTED);
         else registerReceiver(homeKey, f);
+        IntentFilter p = new IntentFilter();
+        p.addAction(Intent.ACTION_PACKAGE_ADDED);
+        p.addAction(Intent.ACTION_PACKAGE_REMOVED);
+        p.addAction(Intent.ACTION_PACKAGE_CHANGED);
+        p.addAction(Intent.ACTION_PACKAGE_REPLACED);
+        p.addDataScheme("package");
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(packages, p, Context.RECEIVER_EXPORTED);
+        else registerReceiver(packages, p);
         // Bound after boot or an update, the stock home may already be up with no event left to catch.
         android.view.accessibility.AccessibilityNodeInfo front = getRootInActiveWindow();
-        if (stockHome != null && front != null && stockHome.equals(String.valueOf(front.getPackageName()))) openHome();
+        if (front != null && active && String.valueOf(front.getPackageName()).equals(stockHome)) openHome();
+    }
+
+    /**
+     * Matches the stock home by package, as its popups count too, and any other HOME activity (Xiaomi's FallbackHome
+     * when PatchWall is off) by class only: its package also holds the TV's settings.
+     */
+    private void refreshHomes() {
+        Intent home = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+        PackageManager pm = getPackageManager();
+        // Not the resolved home: once PatchWall is turned off and on, Android resolves Simple Home (it holds the home
+        // role) while Xiaomi's firmware still starts PatchWall.
+        String stock = null;
+        int best = -1;
+        Set<String> others = new HashSet<>();
+        for (ResolveInfo r : pm.queryIntentActivities(home, 0)) {
+            if (r.activityInfo == null || r.activityInfo.packageName.equals(getPackageName())) continue;
+            others.add(r.activityInfo.name);
+            if (r.priority > best) {
+                best = r.priority;
+                stock = r.activityInfo.packageName;
+            }
+        }
+        stockHome = best >= 0 ? stock : null;      // a negative priority is only a fallback screen
+        otherHomes = others;
+        active = stockHome != null || stockHome(this) != null;
+        Log.i(TAG, "homes: stock " + stockHome + ", " + others.size() + " others, active " + active);
+    }
+
+    private boolean isOtherHome(AccessibilityEvent e) {
+        if (!active) return false;
+        return String.valueOf(e.getPackageName()).equals(stockHome) || otherHomes.contains(String.valueOf(e.getClassName()));
     }
 
     /** Switched off by the user in the TV's settings (a force-stop ends the process without this). */
@@ -73,22 +135,24 @@ public class HomeButton extends AccessibilityService {
 
     @Override public void onDestroy() {
         if (running == this) running = null;
-        try {
-            unregisterReceiver(homeKey);
-        } catch (Exception ignored) {
+        main.removeCallbacksAndMessages(null);
+        for (BroadcastReceiver r : new BroadcastReceiver[]{homeKey, packages}) {
+            try {
+                unregisterReceiver(r);
+            } catch (Exception ignored) {
+            }
         }
         super.onDestroy();
     }
 
     @Override protected boolean onKeyEvent(KeyEvent e) {
-        if (e.getKeyCode() != KeyEvent.KEYCODE_HOME || stockHome == null) return false;
+        if (e.getKeyCode() != KeyEvent.KEYCODE_HOME || !active) return false;
         if (e.getAction() == KeyEvent.ACTION_UP) openHome();
         return true;
     }
 
     @Override public void onAccessibilityEvent(AccessibilityEvent e) {
-        if (stockHome == null || e.getEventType() != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return;
-        if (stockHome.equals(String.valueOf(e.getPackageName()))) openHome();
+        if (e.getEventType() == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED && isOtherHome(e)) openHome();
     }
 
     @Override public void onInterrupt() { }
@@ -158,7 +222,7 @@ public class HomeButton extends AccessibilityService {
 
     private static boolean wanted(Context c) {
         return c.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) == PackageManager.PERMISSION_GRANTED
-                && new Prefs(c).homeButton() && stockHome(c) != null;
+                && new Prefs(c).homeButton();
     }
 
     private static String me(Context c) {

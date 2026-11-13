@@ -29,9 +29,9 @@ public class SettingsActivity extends Activity {
 
     static final String EXTRA_PAGE = "page";
 
-    private static final String[] PAGES = {"Home", "Network", "Display & sound", "Inputs", "Apps", "Screensaver", "About", "Android settings"};
-    private static final int[] ICONS = {R.drawable.ic_home, R.drawable.ic_wifi, R.drawable.ic_display, R.drawable.ic_input,
-            R.drawable.ic_apps, R.drawable.ic_moon, R.drawable.ic_info, R.drawable.ic_settings};
+    private static final String[] PAGES = {"Home", "Inputs", "Apps", "Background", "Screensaver", "Network", "Display & sound", "About", "Android settings"};
+    private static final int[] ICONS = {R.drawable.ic_home, R.drawable.ic_input, R.drawable.ic_apps, R.drawable.ic_display,
+            R.drawable.ic_moon, R.drawable.ic_wifi, R.drawable.ic_display, R.drawable.ic_info, R.drawable.ic_settings};
 
     private static final class Row {
         final String title, sub, value;
@@ -55,9 +55,10 @@ public class SettingsActivity extends Activity {
     private TextView pageTitle;
     private int page, rowFocus;
     private boolean inRows;
-    private boolean clipPage;              // the aerial clip list, opened from the Home page
+    private boolean clipPage;              // the aerial clip list, opened from the Background page
     private int rowFocusAfterShow = -1;
-    private static final int AERIAL_ROW = 2;   // "Aerial videos" on the Home page
+    private static final int BACKGROUND_PAGE = 3;
+    private static final int AERIAL_ROW = 1;   // "Videos" on the Background page
     private final OkKey okKey = new OkKey();
 
     @Override
@@ -169,17 +170,18 @@ public class SettingsActivity extends Activity {
 
     private void showPage(int p) {
         page = p;
-        if (p != 0) clipPage = false;
+        if (p != BACKGROUND_PAGE) clipPage = false;
         pageTitle.setText(clipPage ? "Aerial videos" : PAGES[p]);
         rows.clear();
         switch (p) {
-            case 0: if (clipPage) clipRows(); else homeRows(); break;
-            case 1: networkRows(); break;
-            case 2: displayRows(); break;
-            case 3: inputRows(); break;
-            case 4: appRows(); break;
-            case 5: screensaverRows(); break;
-            case 6: aboutRows(); break;
+            case 0: homeRows(); break;
+            case 1: inputRows(); break;
+            case 2: appRows(); break;
+            case BACKGROUND_PAGE: if (clipPage) clipRows(); else backgroundRows(); break;
+            case 4: screensaverRows(); break;
+            case 5: networkRows(); break;
+            case 6: displayRows(); break;
+            case 7: aboutRows(); break;
             default: androidRows();
         }
         rowBox.removeAllViews();
@@ -197,42 +199,45 @@ public class SettingsActivity extends Activity {
 
     private void homeRows() {
         String[] rowsNames = {"Automatic", "One row", "Two rows"};
-        rows.add(new Row("Dock layout", "Automatic uses two rows when one would make tiles too small",
+        rows.add(new Row("Dock rows", "Automatic switches to two rows when tiles would get too small",
                 rowsNames[prefs.dockRows()], () -> prefs.setDockRows((prefs.dockRows() + 1) % 3)));
-        rows.add(new Row("Dock position", "Centre puts an app's content under the dock, without live input previews",
+        rows.add(new Row("Dock position", "Centre shows app content under the dock. Input previews are off there",
                 prefs.dockCentred() ? "Centre" : "Bottom", () -> prefs.setDockCentred(!prefs.dockCentred())));
-        rows.add(new Row("All apps tile", "Off: the settings button opens a menu with All apps",
+        rows.add(new Row("All apps tile", "When off, the settings button opens a menu with All apps",
                 onOff(prefs.allAppsTile()), () -> prefs.setAllAppsTile(!prefs.allAppsTile())));
-        rows.add(new Row("Aerial video background", "Apple's aerial footage, downloaded once and kept on the device",
+        rows.add(new Row("Show app content", "Continue watching and channels from the focused app, above the dock",
+                onOff(prefs.spotlight()), () -> prefs.setSpotlight(!prefs.spotlight())));
+        if (HomeButton.stockHome(this) != null) {
+            rows.add(new Row("Home button opens Simple Home", "This TV has its own home screen. To use this one, turn on \""
+                    + getString(R.string.home_button) + "\" in Accessibility", onOff(HomeButton.on(this)),
+                    () -> open(Settings.ACTION_ACCESSIBILITY_SETTINGS, Settings.ACTION_SETTINGS)));
+        }
+    }
+
+    private void backgroundRows() {
+        rows.add(new Row("Aerial background", "Apple's aerial videos. Each one downloads once and stays on the TV",
                 onOff(prefs.aerial()), () -> prefs.setAerial(!prefs.aerial())));
         rows.add(new Row("Background colour", "Shown when the aerial is off", Prefs.BACKGROUND_NAMES[prefs.background()],
                 () -> prefs.setBackground((prefs.background() + 1) % Prefs.BACKGROUND_COLOURS.length)));
         int chosen = Aerials.chosen(this, prefs.aerialIds()).size();
-        rows.add(new Row("Aerial videos", "Pick which ones play", chosen + " of " + Aerials.all(this).size(), () -> {
+        rows.add(new Row("Videos", "Choose which ones play", chosen + " of " + Aerials.all(this).size(), () -> {
             clipPage = true;
             rowFocusAfterShow = 0;
         }));
-        rows.add(new Row("Aerial order", null, prefs.aerialShuffle() ? "Shuffle" : "List order",
+        rows.add(new Row("Play order", null, prefs.aerialShuffle() ? "Shuffle" : "In order",
                 () -> prefs.setAerialShuffle(!prefs.aerialShuffle())));
         boolean uhd = AerialBackground.use4k(this);
-        rows.add(new Row("Aerial quality", "4K clips are about 330 MB each, Full HD about 230 MB",
+        rows.add(new Row("Video quality", "4K is about 330 MB per video, Full HD about 230 MB",
                 uhd ? "4K" : "Full HD", () -> prefs.setAerial4k(!uhd)));
         boolean inWindow = AerialBackground.inWindow(this);
-        rows.add(new Row("Aerial drawn on", "Pick \"The home\" if the aerial stays black",
-                inWindow ? "The home" : "TV video plane", () -> prefs.setAerialInWindow(!inWindow)));
-        rows.add(new Row("Show app content on focus", "Continue watching and channels above the dock, with artwork",
-                onOff(prefs.spotlight()), () -> prefs.setSpotlight(!prefs.spotlight())));
+        rows.add(new Row("Draw video on", "Try \"Home screen\" if the background stays black",
+                inWindow ? "Home screen" : "TV video layer", () -> prefs.setAerialInWindow(!inWindow)));
         long mb = dirSize(new File(getCacheDir(), "aerial")) / (1024 * 1024);
-        rows.add(new Row("Clear downloaded videos", "They download again when needed", mb + " MB", () -> {
+        rows.add(new Row("Clear downloaded videos", "Frees up space. Videos download again when needed", mb + " MB", () -> {
             File[] fs = new File(getCacheDir(), "aerial").listFiles();
             if (fs != null) for (File f : fs) //noinspection ResultOfMethodCallIgnored
                 f.delete();
         }));
-        if (HomeButton.stockHome(this) != null) {
-            rows.add(new Row("Open Simple Home with the Home button", "This TV keeps its own home: turn on \""
-                    + getString(R.string.home_button) + "\" in Accessibility", onOff(HomeButton.on(this)),
-                    () -> open(Settings.ACTION_ACCESSIBILITY_SETTINGS, Settings.ACTION_SETTINGS)));
-        }
     }
 
     private void clipRows() {
@@ -266,6 +271,8 @@ public class SettingsActivity extends Activity {
             rows.add(new Row("No TV inputs", "This device has no HDMI or AV inputs", null, null));
             return;
         }
+        rows.add(new Row("Live preview", "Shows the input's picture when its tile is focused",
+                onOff(prefs.preview()), () -> prefs.setPreview(!prefs.preview())));
         Pins pins = new Pins(prefs.pins());
         java.util.Set<String> hidden = prefs.hiddenTiles();
         for (Tile t : inputs) {
@@ -281,22 +288,20 @@ public class SettingsActivity extends Activity {
                 prefs.setPins(p.serialize());
             }));
         }
-        rows.add(new Row("Live preview on focus", "Shows the input's picture when its tile is focused",
-                onOff(prefs.preview()), () -> prefs.setPreview(!prefs.preview())));
     }
 
     private void appRows() {
-        rows.add(new Row("Manage apps", "Storage, permissions, uninstall", null,
+        rows.add(new Row("Manage apps", "Storage, permissions and uninstall", null,
                 () -> open(Settings.ACTION_APPLICATION_SETTINGS, Settings.ACTION_SETTINGS)));
         List<String> stores = Suggestions.stores(this);
         String store = Suggestions.store(this, prefs.store());
         if (store == null) {
             rows.add(new Row("App store", "Install APKUpdater to get apps without Google Play", "None", null));
         } else if (stores.size() > 1) {
-            rows.add(new Row("App store", "Used by Get below. Select to switch", Suggestions.storeName(store),
+            rows.add(new Row("App store", "Used by the Get buttons below. Select to switch", Suggestions.storeName(store),
                     () -> prefs.setStore(stores.get((stores.indexOf(store) + 1) % stores.size()))));
         } else {
-            rows.add(new Row("App store", "Used by Get below", Suggestions.storeName(store), () -> launch(store)));
+            rows.add(new Row("App store", "Used by the Get buttons below", Suggestions.storeName(store), () -> launch(store)));
         }
         for (Suggestions.App a : Suggestions.list(this)) {
             if (Suggestions.installed(this, a.pkg)) {
@@ -329,20 +334,23 @@ public class SettingsActivity extends Activity {
                 .startsWith(getPackageName() + "/");
         rows.add(new Row("Use Simple Home's screensaver", ours ? null : "Pick \"Simple Home\" in the TV's screensaver list",
                 ours ? "On" : "Off", () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
+        rows.add(new Row("When it starts", "Set in the TV's own settings", null, () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
         rows.add(new Row("Clock", "Time and date in the corner", onOff(prefs.screensaverClock()),
                 () -> prefs.setScreensaverClock(!prefs.screensaverClock())));
         int dim = prefs.screensaverDim();
-        rows.add(new Row("Dim after", "Darkens the screensaver until the TV wakes", dim == 0 ? "Never" : dim < 60 ? dim + " min" : dim / 60 + " h",
+        rows.add(new Row("Dim after", "Darkens the screen after this long, until the TV wakes", dim == 0 ? "Never" : dim < 60 ? dim + " min" : dim / 60 + " h",
                 () -> prefs.setScreensaverDim(nextDim(dim))));
         if (dim > 0) {
             int level = prefs.screensaverDimLevel();
             rows.add(new Row("Dim level", "How dark it gets", level + "%",
                     () -> prefs.setScreensaverDimLevel(nextStep(level, 60, 75, 85, 95))));
         }
+        int off = prefs.screensaverOff();
+        rows.add(new Row("Turn off after", "Puts the TV in standby after this long on the screensaver",
+                off == 0 ? "Never" : off / 60 + " h", () -> prefs.setScreensaverOff(nextStep(off, 0, 60, 120, 240, 480))));
         rows.add(new Row("Start now", null, null, () -> startSafe(new Intent(Intent.ACTION_MAIN)
                 .setClassName("com.android.systemui", "com.android.systemui.Somnambulator")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))));
-        rows.add(new Row("When it starts", "Set by the TV", null, () -> open(Settings.ACTION_DREAM_SETTINGS, Settings.ACTION_DISPLAY_SETTINGS)));
     }
 
     private void aboutRows() {
@@ -528,7 +536,7 @@ public class SettingsActivity extends Activity {
 
     private void leaveClipPage() {
         clipPage = false;
-        showPage(0);
+        showPage(BACKGROUND_PAGE);
         focusRow(AERIAL_ROW);
     }
 

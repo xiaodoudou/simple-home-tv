@@ -94,6 +94,10 @@ final class Prefs {
     int screensaverDimLevel() { return p.getInt("ss_dim_level", 95); }
     void setScreensaverDimLevel(int percent) { p.edit().putInt("ss_dim_level", percent).apply(); }
 
+    /** Minutes of screensaver before the TV goes to standby, 0 for never. */
+    int screensaverOff() { return p.getInt("ss_off", 0); }
+    void setScreensaverOff(int minutes) { p.edit().putInt("ss_off", minutes).apply(); }
+
     /** The content sources ({@link Content.Source#key}) hidden from an app's spotlight. */
     Set<String> hiddenSources(String pkg) {
         return set("hide:" + pkg);
@@ -124,6 +128,14 @@ final class Prefs {
         if (off) s.add(inputId);
         else s.remove(inputId);
         putSet("nopreview", s);
+    }
+
+    /** The name the user gave an input, or null for the one the TV reports. */
+    String inputName(String inputId) { return p.getString("name:" + inputId, null); }
+
+    void setInputName(String inputId, String name) {
+        if (name == null || name.trim().isEmpty()) p.edit().remove("name:" + inputId).apply();
+        else p.edit().putString("name:" + inputId, name.trim()).apply();
     }
 
     // Stored as text: StringSet values must never be mutated in place, which is an easy trap.
