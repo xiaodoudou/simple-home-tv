@@ -30,6 +30,7 @@ final class Content {
         String title;
         String sub;     // "Season 3 · Episode 2", or null
         String art;     // poster/thumbnail URI (http(s) or content://)
+        String artAlt;  // the poster, when art is the thumbnail: Emby publishes thumbnails its server doesn't have
         String intent;  // deep link into the app, or null
         float progress; // 0..1, 0 when unknown
     }
@@ -155,6 +156,7 @@ final class Content {
         it.title = title;
         it.sub = subtitle(season, episode, epTitle, title);
         it.art = !thumb.isEmpty() ? thumb : (poster.isEmpty() ? null : poster);
+        it.artAlt = !thumb.isEmpty() && !poster.isEmpty() && !poster.equals(thumb) ? poster : null;
         it.intent = intent.isEmpty() ? null : intent;
         return it;
     }

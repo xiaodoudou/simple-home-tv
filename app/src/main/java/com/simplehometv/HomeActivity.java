@@ -676,7 +676,7 @@ public class HomeActivity extends Activity {
             for (Tile t : apps) {
                 List<Content.Source> sources = Content.sources(this, t.pkg);
                 List<Content.Item> items = Content.items(this, t.pkg, sources, prefs.hiddenSources(t.pkg), 12);
-                for (int i = 0; i < Math.min(items.size(), 6); i++) ImageCache.load(this, items.get(i).art, Math.round(contentW * dp));
+                for (int i = 0; i < Math.min(items.size(), 6); i++) ImageCache.load(this, items.get(i).art, items.get(i).artAlt, Math.round(contentW * dp));
                 Spot s = new Spot(sources, items);
                 main.post(() -> {
                     spots.put(t.pkg, s);
@@ -851,14 +851,14 @@ public class HomeActivity extends Activity {
         capl.leftMargin = px(RING);
         capl.topMargin = px(6);
         col.addView(cap, capl);
-        Bitmap ready = ImageCache.peek(it.art, contentW * 2);
+        Bitmap ready = ImageCache.peek(it.art, it.artAlt, contentW * 2);
         if (ready != null) {
             img.setImageBitmap(ready);
         } else if (it.art != null) {
-            String want = it.art;
+            String want = it.art, alt = it.artAlt;
             img.setTag(want);
             io.execute(() -> {
-                Bitmap b = ImageCache.load(this, want, Math.round(contentW * dp));
+                Bitmap b = ImageCache.load(this, want, alt, Math.round(contentW * dp));
                 main.post(() -> {
                     if (b != null && want.equals(img.getTag())) {
                         img.setAlpha(0f);

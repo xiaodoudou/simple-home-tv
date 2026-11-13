@@ -26,8 +26,23 @@ final class ImageCache {
 
     private ImageCache() { }
 
+    // A missing image is asked for again on every focus otherwise: one request per card per visit.
+    private static final java.util.Map<String, Long> FAILED = new java.util.concurrent.ConcurrentHashMap<>();
+    private static final long RETRY_MS = 10 * 60_000;
+
     static Bitmap peek(String uri, int maxW) {
         return uri == null ? null : MEM.get(maxW + "|" + uri);
+    }
+
+    static Bitmap peek(String uri, String alt, int maxW) {
+        Bitmap b = peek(uri, maxW);
+        return b != null ? b : peek(alt, maxW);
+    }
+
+    /** {@code uri}, or {@code alt} when that can't be had. */
+    static Bitmap load(Context c, String uri, String alt, int maxW) {
+        Bitmap b = load(c, uri, maxW);
+        return b != null || alt == null ? b : load(c, alt, maxW);
     }
 
     static Bitmap load(Context c, String uri, int maxW) {
@@ -35,6 +50,8 @@ final class ImageCache {
         String key = maxW + "|" + uri;
         Bitmap hit = MEM.get(key);
         if (hit != null) return hit;
+        Long failed = FAILED.get(uri);
+        if (failed != null && android.os.SystemClock.uptimeMillis() - failed < RETRY_MS) return null;
         try {
             File f = cacheFile(c, uri);
             if (!f.exists() || f.length() == 0) fetch(c, uri, f);
@@ -54,11 +71,14 @@ final class ImageCache {
             }
             Bitmap b = BitmapFactory.decodeFile(f.getPath(), o);
             if (b != null) MEM.put(key, b);
+            else FAILED.put(uri, android.os.SystemClock.uptimeMillis());
             return b;
         } catch (Exception e) {
+            FAILED.put(uri, android.os.SystemClock.uptimeMillis());
             return null;
         }
     }
+
 
     private static File cacheFile(Context c, String uri) throws Exception {
         MessageDigest md = MessageDigest.getInstance("MD5");
