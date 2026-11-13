@@ -185,6 +185,7 @@ public class HomeActivity extends Activity {
         // Other apps' rows need it from Android 10; some TVs grant it at install, others leave it to the app.
         String listings = "android.permission.READ_TV_LISTINGS";
         if (android.os.Build.VERSION.SDK_INT >= 23 && checkSelfPermission(listings) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            HomeButton.homeLeaving();
             requestPermissions(new String[]{listings}, 1);
         }
         Ui.init(this);
@@ -1969,6 +1970,7 @@ public class HomeActivity extends Activity {
     private boolean startSafe(Intent i) {
         if (i == null) return false;
         try {
+            HomeButton.homeLeaving();
             startActivity(i);
             return true;
         } catch (Exception e) {

@@ -36,7 +36,9 @@ import java.util.Set;
 public class HomeButton extends AccessibilityService {
 
     private static final String TAG = "HomeButton";
-    private static final long HOME_PAUSE_MS = 400;     // Home pauses the home 30-80 ms after the key (MiTV-MFTR0)
+    // Home pauses the home 30-80 ms after the key, but a second quick press can start PatchWall 500 ms or more after
+    // the first (MiTV-MFTR0): every pause this soon after Home is the stock home coming up.
+    private static final long HOME_PAUSE_MS = 1500;
     private static final long HOME_RETRY_MS = 300;
 
     private final Handler main = new Handler(Looper.getMainLooper());
@@ -52,9 +54,8 @@ public class HomeButton extends AccessibilityService {
     private final BroadcastReceiver homeKey = new BroadcastReceiver() {
         @Override public void onReceive(Context c, Intent i) {
             if (!"homekey".equals(i.getStringExtra("reason"))) return;
-            if (homeInFront) {
-                homeKeyAt = SystemClock.uptimeMillis();
-            } else if (active) {
+            homeKeyAt = SystemClock.uptimeMillis();
+            if (!homeInFront && active) {
                 // A restarted PatchWall sends no window event, so Home from an app is answered here too. The stock
                 // home starts some 30 ms after the key: the second start puts Simple Home back if it lost that race.
                 main.post(HomeButton.this::openHome);
@@ -158,6 +159,8 @@ public class HomeButton extends AccessibilityService {
     @Override public void onInterrupt() { }
 
     private void openHome() {
+        // Restarting the front home pauses it, which within HOME_PAUSE_MS of Home would restart it again, in a loop.
+        if (homeInFront) return;
         startActivity(new Intent(this, HomeActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
     }
@@ -175,10 +178,13 @@ public class HomeButton extends AccessibilityService {
     static void homePaused() {
         homeInFront = false;
         HomeButton s = running;
-        if (s != null && s.stockHome != null && SystemClock.uptimeMillis() - homeKeyAt < HOME_PAUSE_MS) {
-            homeKeyAt = Long.MIN_VALUE / 2;
-            s.openHome();
-        }
+        // The window stays open: on a double press the stock home can come up again after this restart.
+        if (s != null && s.active && SystemClock.uptimeMillis() - homeKeyAt < HOME_PAUSE_MS) s.openHome();
+    }
+
+    /** The home is opening something itself: what covers it next is not the stock home. */
+    static void homeLeaving() {
+        homeKeyAt = Long.MIN_VALUE / 2;
     }
 
     // ---- staying on ----
