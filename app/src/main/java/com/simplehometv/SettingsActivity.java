@@ -51,7 +51,7 @@ public class SettingsActivity extends Activity {
     private final List<View> rowViews = new ArrayList<>();
     private final List<Row> rows = new ArrayList<>();
     private LinearLayout rowBox;
-    private ScrollView rowScroll;
+    private ScrollView rowScroll, catScroll;
     private TextView pageTitle;
     private int page, rowFocus;
     private boolean inRows;
@@ -111,6 +111,16 @@ public class SettingsActivity extends Activity {
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(-2, -2);
         tl.bottomMargin = px(26);
         left.addView(title, tl);
+        catScroll = new ScrollView(this);
+        catScroll.setVerticalScrollBarEnabled(false);
+        catScroll.setFocusable(false);
+        catScroll.setVerticalFadingEdgeEnabled(true);
+        catScroll.setFadingEdgeLength(px(36));
+        catScroll.setDescendantFocusability(ViewGroup.FOCUS_BLOCK_DESCENDANTS);
+        LinearLayout cats = new LinearLayout(this);
+        cats.setOrientation(LinearLayout.VERTICAL);
+        catScroll.addView(cats, new FrameLayout.LayoutParams(-1, -2));
+        left.addView(catScroll, new LinearLayout.LayoutParams(-1, 0, 1));
         for (int i = 0; i < PAGES.length; i++) {
             LinearLayout row = new LinearLayout(this);
             row.setGravity(Gravity.CENTER_VERTICAL);
@@ -125,7 +135,7 @@ public class SettingsActivity extends Activity {
             row.addView(t, l);
             LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(-1, px(44));
             rl.bottomMargin = px(4);
-            left.addView(row, rl);
+            cats.addView(row, rl);
             catViews.add(row);
         }
         root.addView(left, new FrameLayout.LayoutParams(px(300), -1));
@@ -430,6 +440,15 @@ public class SettingsActivity extends Activity {
         if (p != page) showPage(p);
         styleCats();
         styleRows();
+        scrollIntoView(catScroll, catViews.get(p));
+    }
+
+    private static void scrollIntoView(ScrollView s, View v) {
+        s.post(() -> {
+            int y = v.getTop(), h = s.getHeight(), cur = s.getScrollY();
+            if (y < cur) s.smoothScrollTo(0, y);
+            else if (y + v.getHeight() > cur + h) s.smoothScrollTo(0, y + v.getHeight() - h);
+        });
     }
 
     private void focusRow(int i) {
@@ -438,12 +457,7 @@ public class SettingsActivity extends Activity {
         rowFocus = Math.max(0, Math.min(i, rows.size() - 1));
         styleCats();
         styleRows();
-        View v = rowViews.get(rowFocus);
-        rowScroll.post(() -> {
-            int y = v.getTop(), h = rowScroll.getHeight(), cur = rowScroll.getScrollY();
-            if (y < cur) rowScroll.smoothScrollTo(0, y);
-            else if (y + v.getHeight() > cur + h) rowScroll.smoothScrollTo(0, y + v.getHeight() - h);
-        });
+        scrollIntoView(rowScroll, rowViews.get(rowFocus));
     }
 
     private int firstActionable() {
