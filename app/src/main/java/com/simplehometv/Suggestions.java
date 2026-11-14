@@ -9,8 +9,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Apps worth having on a TV, picked by whether the device has Google Play. Without Play the official YouTube app
- * does not run, so SmartTube stands in, and two Google Play clients get the rest: Aurora, which opens an app's page
+ * Apps worth having on a TV, picked by whether the device has Google Play. SmartTube is the YouTube suggestion
+ * everywhere, as it has no ads. Without Play two Google Play clients get the rest: Aurora, which opens an app's page
  * from Get, and APKUpdater, which keeps them updated with a TV layout.
  */
 final class Suggestions {
@@ -64,15 +64,16 @@ final class Suggestions {
 
     static List<App> list(Context c) {
         List<App> out = new ArrayList<>();
+        App smartTube = new App("org.smarttube.stable", "SmartTube", "YouTube without ads, no Google services needed", "github:yuliskov/SmartTube");
         if (hasPlay(c)) {
-            out.add(new App("com.google.android.youtube.tv", "YouTube", "Official app", null));
+            out.add(smartTube);
             out.add(new App("com.netflix.ninja", "Netflix", "Official app", null));
             out.add(new App("com.amazon.amazonvideo.livingroom", "Prime Video", "Official app", null));
         } else {
             out.add(new App(AURORA, "Aurora Store", "Opens an app's Google Play page from Get, no Google services", "fdroid:com.aurora.store"));
             out.add(new App("org.fdroid.fdroid", "F-Droid", "Free and open-source apps, no Google account", "fdroid:org.fdroid.fdroid"));
             out.add(new App(APKUPDATER, "APKUpdater", "Keeps apps updated, with a TV layout", "github:rumboalla/apkupdater"));
-            out.add(new App("org.smarttube.stable", "SmartTube", "YouTube without ads, no Google services needed", "github:yuliskov/SmartTube"));
+            out.add(smartTube);
         }
         out.add(new App("com.plexapp.android", "Plex", "Your media server, movies and shows", null));
         out.add(new App("org.jellyfin.androidtv", "Jellyfin", "Free media server client", null));
