@@ -3,6 +3,11 @@ package com.simplehometv;
 import android.Manifest;
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.app.AppOpsManager;
+import android.app.usage.UsageEvents;
+import android.app.usage.UsageStatsManager;
+import android.database.ContentObserver;
+import android.os.PowerManager;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -40,6 +45,13 @@ public class HomeButton extends AccessibilityService {
     // the first (MiTV-MFTR0): every pause this soon after Home is the stock home coming up.
     private static final long HOME_PAUSE_MS = 1500;
     private static final long HOME_RETRY_MS = 300;
+    // Xiaomi's UI boost (TVQSService) writes this 45-65 ms into every activity switch, Home included.
+    private static final String UI_BOOST = "mitv_fast_cur_anim_scale";
+    private static final long STOCK_LOOK_FOR_MS = 800;
+    private static final long STOCK_LOOK_MS = 20;
+    private static final long STOCK_SLACK_MS = 150;
+    // Xiaomi switches ADB off on its own around boot and standby; later, with the screen on, it was the user.
+    private static final long ADB_FIRMWARE_WINDOW_MS = 3 * 60_000;
 
     private final Handler main = new Handler(Looper.getMainLooper());
 
@@ -61,6 +73,28 @@ public class HomeButton extends AccessibilityService {
                 main.post(HomeButton.this::openHome);
                 main.postDelayed(HomeButton.this::openHome, HOME_RETRY_MS);
             }
+        }
+    };
+
+    private long screenOnAt = SystemClock.elapsedRealtime();
+    private final BroadcastReceiver screen = new BroadcastReceiver() {
+        @Override public void onReceive(Context c, Intent i) {
+            if (Intent.ACTION_SCREEN_ON.equals(i.getAction())) {
+                screenOnAt = SystemClock.elapsedRealtime();
+                adbChanged();
+            }
+        }
+    };
+
+    private final ContentObserver adbObserver = new ContentObserver(main) {
+        @Override public void onChange(boolean self) {
+            adbChanged();
+        }
+    };
+
+    private final ContentObserver uiBoostObserver = new ContentObserver(main) {
+        @Override public void onChange(boolean self) {
+            uiBoostChanged();
         }
     };
 
@@ -92,6 +126,12 @@ public class HomeButton extends AccessibilityService {
         p.addDataScheme("package");
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(packages, p, Context.RECEIVER_EXPORTED);
         else registerReceiver(packages, p);
+        registerReceiver(screen, new IntentFilter(Intent.ACTION_SCREEN_ON));
+        getContentResolver().registerContentObserver(Settings.Global.getUriFor(Settings.Global.ADB_ENABLED), false, adbObserver);
+        if (Settings.Global.getString(getContentResolver(), UI_BOOST) != null) {
+            getContentResolver().registerContentObserver(Settings.Global.getUriFor(UI_BOOST), false, uiBoostObserver);
+        }
+        adbChanged();
         // Bound after boot or an update, the stock home may already be up with no event left to catch.
         android.view.accessibility.AccessibilityNodeInfo front = getRootInActiveWindow();
         if (front != null && active && String.valueOf(front.getPackageName()).equals(stockHome)) openHome();
@@ -137,12 +177,14 @@ public class HomeButton extends AccessibilityService {
     @Override public void onDestroy() {
         if (running == this) running = null;
         main.removeCallbacksAndMessages(null);
-        for (BroadcastReceiver r : new BroadcastReceiver[]{homeKey, packages}) {
+        for (BroadcastReceiver r : new BroadcastReceiver[]{homeKey, packages, screen}) {
             try {
                 unregisterReceiver(r);
             } catch (Exception ignored) {
             }
         }
+        getContentResolver().unregisterContentObserver(adbObserver);
+        getContentResolver().unregisterContentObserver(uiBoostObserver);
         super.onDestroy();
     }
 
@@ -163,6 +205,89 @@ public class HomeButton extends AccessibilityService {
         if (homeInFront) return;
         startActivity(new Intent(this, HomeActivity.class)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
+    }
+
+    // ---- Home from another app, on Xiaomi ----
+
+    private long lookFrom, lookUntil;
+
+    /**
+     * Home in another app draws PatchWall at about 200-430 ms (MiTV-MFTR0), and both its window event and the
+     * "homekey" broadcast reach a service in the back only after that. The UI boost comes at 45-65 ms, and usage
+     * stats show PatchWall resumed before it is drawn. After aerial-tv's uiBoostChanged.
+     */
+    private void uiBoostChanged() {
+        if (!active || homeInFront || stockHome == null || !usageAllowed()) return;
+        lookFrom = System.currentTimeMillis();
+        lookUntil = SystemClock.uptimeMillis() + STOCK_LOOK_FOR_MS;
+        main.removeCallbacks(stockLook);
+        stockLook.run();
+    }
+
+    private final Runnable stockLook = new Runnable() {
+        @Override public void run() {
+            if (homeInFront) return;
+            String front = resumedSince(lookFrom - STOCK_SLACK_MS);
+            if (front != null && front.equals(stockHome)) {
+                Log.i(TAG, "stock home resumed " + (System.currentTimeMillis() - lookFrom) + " ms after the UI boost");
+                openHome();
+                return;
+            }
+            if (front != null) return;      // another app came to the front: not Home
+            if (SystemClock.uptimeMillis() < lookUntil) main.postDelayed(this, STOCK_LOOK_MS);
+        }
+    };
+
+    /** The package last resumed since {@code from}, by usage stats, else null. */
+    private String resumedSince(long from) {
+        UsageStatsManager usm = (UsageStatsManager) getSystemService(Context.USAGE_STATS_SERVICE);
+        if (usm == null) return null;
+        UsageEvents events = usm.queryEvents(from, System.currentTimeMillis() + 1000);
+        UsageEvents.Event e = new UsageEvents.Event();
+        String last = null;
+        while (events.hasNextEvent()) {
+            events.getNextEvent(e);
+            if (e.getEventType() == UsageEvents.Event.MOVE_TO_FOREGROUND && !getPackageName().equals(e.getPackageName())) {
+                last = e.getPackageName();
+            }
+        }
+        return last;
+    }
+
+    private boolean usageAllowed() {
+        AppOpsManager ops = (AppOpsManager) getSystemService(Context.APP_OPS_SERVICE);
+        return ops != null && ops.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), getPackageName())
+                == AppOpsManager.MODE_ALLOWED;
+    }
+
+    // ---- ADB debugging ----
+
+    /**
+     * Xiaomi switches ADB debugging off around standby. Switched off at boot, with the screen off or just after it
+     * came on, it goes back on; switched off later, the user meant it, and it stays off.
+     */
+    private void adbChanged() {
+        if (checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) != PackageManager.PERMISSION_GRANTED) return;
+        Prefs prefs = new Prefs(this);
+        if (Settings.Global.getInt(getContentResolver(), Settings.Global.ADB_ENABLED, 0) == 1) {
+            prefs.setKeepAdb(true);
+            return;
+        }
+        if (!prefs.keepAdb()) return;
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        long now = SystemClock.elapsedRealtime();
+        boolean firmware = pm == null || !pm.isInteractive() || now < ADB_FIRMWARE_WINDOW_MS || now - screenOnAt < ADB_FIRMWARE_WINDOW_MS;
+        if (!firmware) {
+            prefs.setKeepAdb(false);
+            Log.i(TAG, "ADB switched off in use; leaving it off");
+            return;
+        }
+        try {
+            Settings.Global.putInt(getContentResolver(), Settings.Global.ADB_ENABLED, 1);
+            Log.i(TAG, "ADB switched off by the firmware; turned it back on");
+        } catch (Exception e) {
+            Log.w(TAG, "could not turn ADB back on: " + e);
+        }
     }
 
     // ---- told by the home ----

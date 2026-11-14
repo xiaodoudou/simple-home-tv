@@ -79,6 +79,10 @@ final class Prefs {
     boolean homeButton() { return p.getBoolean("home_button", false); }
     void setHomeButton(boolean on) { p.edit().putBoolean("home_button", on).apply(); }
 
+    /** ADB debugging was on and not switched off by the user; see HomeButton.adbChanged. */
+    boolean keepAdb() { return p.getBoolean("keep_adb", false); }
+    void setKeepAdb(boolean on) { p.edit().putBoolean("keep_adb", on).apply(); }
+
     /** Null until chosen: the default then follows the TV (see {@link AerialBackground#inWindow}). */
     Boolean aerialInWindow() { return p.contains("aerial_window") ? p.getBoolean("aerial_window", false) : null; }
     void setAerialInWindow(boolean on) { p.edit().putBoolean("aerial_window", on).apply(); }

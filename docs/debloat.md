@@ -93,11 +93,15 @@ adb shell settings put secure enabled_accessibility_services com.simplehometv/.H
 adb shell settings put secure accessibility_enabled 1
 adb shell pm grant com.simplehometv android.permission.WRITE_SECURE_SETTINGS
 adb shell cmd notification allow_listener com.simplehometv/com.simplehometv.RevivalListener
+adb shell appops set com.simplehometv GET_USAGE_STATS allow
 ```
 
-The last two matter on Xiaomi. Its firmware force-stops apps at standby and after one stops responding, and Android
+The last three matter on Xiaomi. Its firmware force-stops apps at standby and after one stops responding, and Android
 then switches the app's accessibility service off. A notification listener comes back after a force-stop, so Simple
-Home registers one that reads nothing and only turns the service back on. PatchWall can still show for a moment when
+Home registers one that reads nothing and only turns the service back on. Usage access lets the service see PatchWall
+come up after Home in another app before it is drawn. With `WRITE_SECURE_SETTINGS` the service also switches ADB
+debugging back on when the firmware turns it off around standby; turned off by hand with the TV in use, it stays off.
+PatchWall can still show for a moment when
 you leave an app with Back.
 
 Keep the settings (`com.xiaomi.mitv.settings`, `com.xiaomi.tvqs`), the inputs player (`com.xiaomi.mitv.tvplayer`),

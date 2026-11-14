@@ -16,6 +16,9 @@
     <!-- Granted over adb on TVs that need the Home button service; see HomeButton.ensureOn. -->
     <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" tools:ignore="ProtectedPermissions"
         xmlns:tools="http://schemas.android.com/tools" />
+    <!-- Allowed over adb (appops GET_USAGE_STATS) on Xiaomi; see HomeButton.uiBoostChanged. -->
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:ignore="ProtectedPermissions"
+        xmlns:tools="http://schemas.android.com/tools" />
 
     <queries>
         <intent>
