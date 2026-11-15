@@ -29,7 +29,7 @@ public class SettingsActivity extends Activity {
 
     static final String EXTRA_PAGE = "page";
 
-    private static final String[] PAGES = {"Home", "Inputs", "Apps", "Background", "Screensaver", "Network", "Display & sound", "About", "Android settings"};
+    private static final String[] PAGES = {"Home", "Inputs", "Apps", "Background", "Screensaver", "Network", "Display & sound", "About", "Settings"};
     private static final int[] ICONS = {R.drawable.ic_home, R.drawable.ic_input, R.drawable.ic_apps, R.drawable.ic_display,
             R.drawable.ic_moon, R.drawable.ic_wifi, R.drawable.ic_display, R.drawable.ic_info, R.drawable.ic_settings};
 
@@ -530,8 +530,8 @@ public class SettingsActivity extends Activity {
     }
 
     private void select() {
-        if (!inRows && page == PAGES.length - 1) {
-            openAndroidSettings();
+        if (!inRows && page == PAGES.length - 1 && rows.size() == 1) {
+            rows.get(0).action.run();
             return;
         }
         if (!inRows) {
