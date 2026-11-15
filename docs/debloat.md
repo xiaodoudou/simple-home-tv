@@ -81,28 +81,30 @@ ADB debugging and allow installing unknown apps.
 - `screensavers`: Xiaomi's screensavers. Pick another screensaver first, Simple Home's for one.
 - `voice`: the XiaoAI assistant and its wake word. Skip it if you talk to the remote.
 
-**Don't touch PatchWall** (`com.mitv.tvhome`). This firmware only lets a system app be the home screen: with PatchWall
-off, Home goes to an empty fallback screen that keeps restarting. Simple Home gets around it with an accessibility
-service. When PatchWall or the fallback screen comes up, or you press Home in another app, it brings Simple Home back;
-after a Home press that happens before PatchWall has drawn a frame. PatchWall updates itself, so the service looks
-again at which home the firmware uses whenever an app is installed, updated or turned off. It doesn't filter any
-keys, so holding volume still repeats. Turn it on from Simple Home's Settings > Home, or with adb, together with the two grants that keep it on:
+**Install the Xiaomi build, then turn PatchWall off.** This firmware only lets allowlisted package names be the home
+screen, and `com.ts.launcher` is on the list. The `simple-home-tv-xiaomi` APK is Simple Home under that name: with
+PatchWall (`com.mitv.tvhome`) off it is the real home, at boot and on every Home press. Wait half a minute before
+rebooting after `disable-user`, or PatchWall comes back before the change is written.
 
 ```sh
-adb shell settings put secure enabled_accessibility_services com.simplehometv/.HomeButton
+adb install simple-home-tv-xiaomi-<version>.apk
+adb shell pm disable-user --user 0 com.mitv.tvhome
+adb shell pm grant com.ts.launcher android.permission.WRITE_SECURE_SETTINGS
+adb shell cmd notification allow_listener com.ts.launcher/com.simplehometv.RevivalListener
+adb shell settings put secure enabled_accessibility_services com.ts.launcher/com.simplehometv.HomeButton
 adb shell settings put secure accessibility_enabled 1
-adb shell pm grant com.simplehometv android.permission.WRITE_SECURE_SETTINGS
-adb shell cmd notification allow_listener com.simplehometv/com.simplehometv.RevivalListener
-adb shell appops set com.simplehometv GET_USAGE_STATS allow
 ```
 
-The last three matter on Xiaomi. Its firmware force-stops apps at standby and after one stops responding, and Android
-then switches the app's accessibility service off. A notification listener comes back after a force-stop, so Simple
-Home registers one that reads nothing and only turns the service back on. Usage access lets the service see PatchWall
-come up after Home in another app before it is drawn. With `WRITE_SECURE_SETTINGS` the service also switches ADB
-debugging back on when the firmware turns it off around standby; turned off by hand with the TV in use, it stays off.
-PatchWall can still show for a moment when
-you leave an app with Back.
+The last four keep ADB debugging on: the firmware turns it off around standby, and the service turns it back on
+(turned off by hand with the TV in use, it stays off). The notification listener brings the service back after the
+firmware force-stops apps at standby. Undo with `adb shell pm enable --user 0 com.mitv.tvhome` and a reboot. Under
+any other package name, PatchWall off leaves Home on a black fallback screen. Found by
+[cleanyourtv](https://github.com/Gathin23/cleanyourtv/blob/main/docs/devices/xiaomi-mitv-mftr0-debloat-home.md).
+
+With the normal APK (`com.simplehometv`) leave PatchWall on: the same service, turned on for that package, brings
+Simple Home back when PatchWall comes up, before it draws a frame after a Home press. That needs usage access too
+(`adb shell appops set com.simplehometv GET_USAGE_STATS allow`), and PatchWall can still show for a moment when you
+leave an app with Back.
 
 Keep the settings (`com.xiaomi.mitv.settings`, `com.xiaomi.tvqs`), the inputs player (`com.xiaomi.mitv.tvplayer`),
 anything starting with `mitv.service` or `com.mediatek`, the Sogou keyboard, the system updater

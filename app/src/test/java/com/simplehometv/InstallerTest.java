@@ -30,6 +30,12 @@ public class InstallerTest {
                 D + "app-nonRoot-release.apk"), new String[]{"arm64-v8a"}));
     }
 
+    @Test public void picksTheOwnBuildForThePackage() {
+        java.util.List<String> both = Arrays.asList(D + "simple-home-tv-0.5.0.apk", D + "simple-home-tv-xiaomi-0.5.0.apk");
+        assertEquals(Collections.singletonList(D + "simple-home-tv-xiaomi-0.5.0.apk"), Installer.ownBuild(both, true));
+        assertEquals(Collections.singletonList(D + "simple-home-tv-0.5.0.apk"), Installer.ownBuild(both, false));
+    }
+
     @Test public void comparesVersions() {
         assertTrue(Installer.newer("0.4.10", "0.4.9"));
         assertTrue(Installer.newer("0.5", "0.4.9"));

@@ -188,9 +188,17 @@ final class Installer {
                 .matcher(text("https://github.com/" + repo + "/releases/expanded_assets/" + tag));
         List<String> apks = new ArrayList<>();
         while (m.find()) apks.add(m.group(1));
+        if (source.equals(OWN_SOURCE)) apks = ownBuild(apks, !BuildConfig.APPLICATION_ID.equals("com.simplehometv"));
         String pick = pick(apks, Build.SUPPORTED_ABIS);
         if (pick == null) throw new Exception("no APK in " + repo + " " + tag);
         return "https://github.com" + pick;
+    }
+
+    /** Simple Home's release APKs for this install: the Xiaomi one (package com.ts.launcher) or the others. */
+    static List<String> ownBuild(List<String> apks, boolean xiaomi) {
+        List<String> out = new ArrayList<>();
+        for (String a : apks) if (a.toLowerCase(Locale.ROOT).contains("-xiaomi-") == xiaomi) out.add(a);
+        return out;
     }
 
     /** The build for this TV's processor, else a universal one, never a root variant. */

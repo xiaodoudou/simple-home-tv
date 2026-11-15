@@ -70,6 +70,9 @@ jobs:
           echo "$SIGNING_KEYSTORE_BASE64" | base64 -d > "$SIGNING_KEYSTORE"
           ./gradlew --no-daemon assembleRelease
           cp app/build/outputs/apk/release/app-release.apk "simple-home-tv-${{ needs.check.outputs.version }}.apk"
+          # Xiaomi's China firmware only lets allowlisted package names be Home.
+          ./gradlew --no-daemon -PlauncherApplicationId=com.ts.launcher assembleRelease
+          cp app/build/outputs/apk/release/app-release.apk "simple-home-tv-xiaomi-${{ needs.check.outputs.version }}.apk"
       - name: GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -77,4 +80,5 @@ jobs:
           flags="--generate-notes --verify-tag"
           [ "${{ needs.check.outputs.prerelease }}" = "true" ] && flags="$flags --prerelease"
           gh release create "$GITHUB_REF_NAME" "simple-home-tv-${{ needs.check.outputs.version }}.apk" \
+            "simple-home-tv-xiaomi-${{ needs.check.outputs.version }}.apk" \
             --title "Simple Home TV ${{ needs.check.outputs.version }}" $flags

@@ -5,7 +5,8 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.simplehometv'
+        // Xiaomi's CN firmware only lets allowlisted package names be Home: -PlauncherApplicationId=com.ts.launcher.
+        applicationId project.findProperty('launcherApplicationId') ?: 'com.simplehometv'
         minSdk 24
         targetSdk 35
         versionCode 16

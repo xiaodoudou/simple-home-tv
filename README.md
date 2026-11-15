@@ -44,10 +44,9 @@ adb shell cmd package set-home-activity com.simplehometv/.HomeActivity
 
 Press Home on the remote and you are there. If the TV asks which home app to use, pick Simple Home.
 
-Some firmwares (Xiaomi's Chinese one) only let their own home be the home. There, turn on "Simple Home: Home
-button" in the TV's Accessibility settings and the Home button opens Simple Home anyway. On Xiaomi also run the two
-grants on [Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat), or the firmware switches it off
-again at standby.
+Xiaomi's Chinese firmware only lets allowlisted package names be the home. There, install the
+`simple-home-tv-xiaomi` APK instead (package `com.ts.launcher`, which is on the list) and turn PatchWall off, as on
+[Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat).
 
 On an NVIDIA Shield, Google's home wins over any other, so `set-home-activity` alone does nothing. Turn it off first,
 with the `google-home` group on [Debloat your TV](https://xiaodoudou.github.io/simple-home-tv/debloat) or with

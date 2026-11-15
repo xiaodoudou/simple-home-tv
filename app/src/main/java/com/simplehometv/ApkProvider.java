@@ -12,7 +12,7 @@ import java.io.FileNotFoundException;
 /** Lets the system installer read an APK that {@link Installer} downloaded into the cache. */
 public class ApkProvider extends ContentProvider {
 
-    static final String AUTHORITY = "com.simplehometv.apk";
+    static final String AUTHORITY = BuildConfig.APPLICATION_ID + ".apk";
 
     static Uri uri(File apk) {
         return Uri.parse("content://" + AUTHORITY + "/" + apk.getName());
