@@ -76,7 +76,6 @@ final class Suggestions {
             out.add(smartTube);
         }
         out.add(new App("com.plexapp.android", "Plex", "Your media server, movies and shows", null));
-        out.add(new App("org.jellyfin.androidtv", "Jellyfin", "Free media server client", null));
         out.add(new App("org.xbmc.kodi", "Kodi", "Plays almost anything, local or network", null));
         out.add(new App("org.videolan.vlc", "VLC", "Simple player for files and streams", null));
         out.add(new App("com.limelight", "Moonlight", "Streams games from your PC", "github:moonlight-stream/moonlight-android"));
