@@ -530,10 +530,6 @@ public class SettingsActivity extends Activity {
     }
 
     private void select() {
-        if (!inRows && page == PAGES.length - 1 && rows.size() == 1) {
-            rows.get(0).action.run();
-            return;
-        }
         if (!inRows) {
             focusRow(firstActionable());
             return;
