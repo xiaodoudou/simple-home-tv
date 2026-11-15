@@ -1,6 +1,7 @@
-# Xiaomi Mi TV, China firmware. Tried on a MiTV-MFFU0 (Android 14, HyperOS TV).
-# Never disable PatchWall (com.mitv.tvhome): this firmware only accepts a system app as home, and without it Home
-# lands on a fallback screen that keeps restarting. Keep the settings (com.xiaomi.mitv.settings, com.xiaomi.tvqs),
+# Xiaomi Mi TV, China firmware. Tried on a MiTV-MFFU0 and a MiTV-MFTR0 (Android 14, HyperOS TV).
+# PatchWall (com.mitv.tvhome) is not in this list: turn it off only once the Xiaomi build of Simple Home
+# (com.ts.launcher) is installed, as in docs/debloat.md, or Home lands on a black fallback screen.
+# Keep the settings (com.xiaomi.mitv.settings, com.xiaomi.tvqs),
 # the input player (com.xiaomi.mitv.tvplayer), mitv.service and com.mediatek.*, the Sogou keyboard, the updater
 # (com.xiaomi.mitv.upgrade), the Xiaomi account, casting (com.xiaomi.miplay, com.xiaomi.mitv.smartshare) and the
 # USB player (com.xiaomi.mitv.mediaexplorer).
@@ -51,3 +52,8 @@ com.xiaomi.mitv.hyper.screensaver
 # (seen on a MiTV-MFTR0); without it the remote's voice button does nothing.
 com.xiaomi.voicecontrol
 com.xiaomi.wakeupservice
+
+[patchwall]
+# Xiaomi's home. Skipped unless the Xiaomi build of Simple Home (com.ts.launcher) is installed: under any other
+# name Home then lands on a black fallback screen. Leave 30 s before a reboot, or it comes back.
+com.mitv.tvhome

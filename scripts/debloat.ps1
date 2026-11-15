@@ -21,6 +21,13 @@ foreach ($raw in Get-Content $list) {
     if ($line -eq "" -or $line.StartsWith("#")) { continue }
     if ($line -match '^\[(.+)\]$') { $group = $Matches[1]; continue }
     if ($skipped -contains $group) { continue }
+    if ($line -eq "com.mitv.tvhome" -and -not $Undo) {
+        & adb @adb shell pm path com.ts.launcher *> $null
+        if ($LASTEXITCODE -ne 0) {
+            "{0,-20} {1,-45} {2}" -f $group, $line, "skipped: install simple-home-tv-xiaomi first"
+            continue
+        }
+    }
     if ($Undo) {
         $out = & adb @adb shell pm enable $line 2>&1 | Select-Object -Last 1
     } else {
@@ -28,3 +35,4 @@ foreach ($raw in Get-Content $list) {
     }
     "{0,-20} {1,-45} {2}" -f $group, $line, $out
 }
+& adb @adb shell sync

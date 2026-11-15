@@ -21,6 +21,10 @@ grep -Ev '^[[:space:]]*(#|$)' "$list" | tr -d '\r' | while read -r line; do
         \[*\]) group=$(echo "$line" | tr -d '[]'); continue ;;
     esac
     case "$skip" in *",$group,"*) continue ;; esac
+    if [ "$line" = com.mitv.tvhome ] && [ $undo = 0 ] && ! adb $serial shell pm path com.ts.launcher </dev/null >/dev/null 2>&1; then
+        printf '%-20s %-45s %s\n' "$group" "$line" "skipped: install simple-home-tv-xiaomi first"
+        continue
+    fi
     if [ $undo = 1 ]; then
         out=$(adb $serial shell pm enable "$line" </dev/null 2>&1 | tail -1)
     else
@@ -28,3 +32,4 @@ grep -Ev '^[[:space:]]*(#|$)' "$list" | tr -d '\r' | while read -r line; do
     fi
     printf '%-20s %-45s %s\n' "$group" "$line" "$out"
 done
+adb $serial shell sync
